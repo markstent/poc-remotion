@@ -24,3 +24,9 @@ data/processed/*
 
 # macOS
 .DS_Store
+
+# Superpowers brainstorm sessions
+.superpowers/
+
+# Licensed font binaries: licence unconfirmed, keep out of Git
+src/fonts/

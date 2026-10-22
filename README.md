@@ -1,4 +1,4 @@
-# Latent Space Experimentation Lab - POC Template
+# poc-remotion
 
 Reusable Python and AI proof-of-concept template for building professional, reproducible projects.
 

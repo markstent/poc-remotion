@@ -1,5 +1,5 @@
 [project]
-name = "lc-poc-template"
+name = "poc-remotion"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = []
 
 [project.scripts]
-lc-poc-template = "lc_poc_template:main"
+poc-remotion = "poc_remotion:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

@@ -35,6 +35,10 @@ export function Quote({
   const { width, height } = useVideoConfig();
 
   const line = scene.on_screen[0] ?? "";
+  // Longer quotes shrink a step so the block stays clear of the caption pill
+  // band along the bottom of the frame.
+  const wordCount = line.split(/\s+/).filter(Boolean).length;
+  const fontSize = wordCount <= 8 ? 132 : wordCount <= 12 ? 108 : 88;
 
   const lineIn = spring({ frame, fps, delay: 2, config: SPRING_CONFIG });
   const bubbleIn = spring({ frame, fps, delay: 14, config: SPRING_CONFIG });
@@ -56,7 +60,7 @@ export function Quote({
           top: height * 0.22,
           width: width * 0.8,
           textAlign: "center",
-          fontSize: 132,
+          fontSize,
           lineHeight: 1.08,
           fontWeight: 700,
           color: lineColor,

@@ -4,6 +4,7 @@ import io
 import json
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -48,6 +49,7 @@ def test_validate_catches_type_error(tmp_path, capsys):
     assert "validation error" in err
 
 
+@pytest.mark.skipif(not Path("src/fonts").is_dir(), reason="local font binaries not present")
 def test_validate_works_from_other_cwd(tmp_path, monkeypatch):
     """Validate succeeds from an unrelated cwd: brand resolved from REPO_ROOT."""
     monkeypatch.chdir(tmp_path)

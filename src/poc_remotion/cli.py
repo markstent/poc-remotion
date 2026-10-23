@@ -45,7 +45,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     approve_parser.add_argument("--id", required=True, help="Project identifier")
     approve_parser.add_argument(
         "--stage",
-        choices=["storyboard", "duration", "script"],
+        choices=Project.GATED_STAGES,
         required=True,
         help="Stage to approve",
     )
@@ -112,7 +112,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         _print_error(str(exc))
         return 2
 
-    for stage in ["storyboard", "duration", "script"]:
+    for stage in Project.GATED_STAGES:
         is_approved = project.is_approved(stage)
         status = "approved" if is_approved else "not approved"
         print(f"{stage}: {status}")

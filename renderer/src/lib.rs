@@ -346,17 +346,21 @@ impl KindScene {
         let words = line.split_whitespace().count();
         let size = if words <= 8 { 132 } else if words <= 12 { 108 } else { 88 };
         let line_in = spring_in(frame, &SPRING, 2.0);
+        let char_in = spring_in(frame, &SPRING, 8.0);
         let bubble_in = spring_in(frame, &SPRING, 14.0);
         let bubble_scale = 0.6 + 0.4 * bubble_in;
         let text = para(frame, ctx, line, size, BOLD, DARK_TEAL, 192.0, baseline(237.6, size), 1536.0, 1.05, TextAlign::Center);
         let bubble_text = "What's missing?";
         let font = FontQuery { family: FONT, size: 60, weight: BOLD, ..Default::default() };
         let bw = frame.text_width(ctx, font, bubble_text).unwrap_or(500) as f32 + 112.0;
-        // Tail sits 99px from the bubble's left edge, as in the Remotion layout.
+        // Tail sits 99px from the bubble's left edge, as in the Remotion layout,
+        // and points at the colleague standing to the bubble's lower left.
         let tail_cx = -bw / 2.0 + 99.0;
+        let mate = colleague("idle", 420.0, 560.0 + (1.0 - char_in) * 60.0, 300.0, 0.0, false);
         fframes::svgr!(
             <g>
                 <g opacity={line_in} transform={Transform::translate(0, rise(frame, &SPRING, 2.0, 60.0))}>{text}</g>
+                <g opacity={char_in}>{mate}</g>
                 <g opacity={bubble_in} transform={format!("translate(960 691) scale({bubble_scale:.4})")}>
                     <rect x={-bw / 2.0} y="0" width={bw} height="128" rx="44" fill={WHITE} />
                     <text x="0" y="82" text-anchor="middle" font-family={FONT} font-weight={BOLD} font-size="60" fill={DARK_TEAL}>{bubble_text}</text>

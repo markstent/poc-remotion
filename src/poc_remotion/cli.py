@@ -1,9 +1,10 @@
 """Command-line interface for poc-remotion."""
 
 import argparse
-import os
 import sys
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from poc_remotion.project import Project, ProjectError
 
@@ -66,11 +67,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def _projects_root(args: argparse.Namespace) -> Path:
+    """Resolve the projects root path from args."""
+    return Path(args.projects_root).resolve()
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     """Handle init subcommand."""
-    projects_root = Path(
-        os.path.join(os.getcwd(), args.projects_root.replace("./", ""))
-    ).resolve()
+    projects_root = _projects_root(args)
 
     try:
         Project.create(projects_root / args.id, args.id)
@@ -82,9 +86,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Handle status subcommand."""
-    projects_root = Path(
-        os.path.join(os.getcwd(), args.projects_root.replace("./", ""))
-    ).resolve()
+    projects_root = _projects_root(args)
 
     project_path = projects_root / args.id
 
@@ -104,9 +106,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_approve(args: argparse.Namespace) -> int:
     """Handle approve subcommand."""
-    projects_root = Path(
-        os.path.join(os.getcwd(), args.projects_root.replace("./", ""))
-    ).resolve()
+    projects_root = _projects_root(args)
 
     project_path = projects_root / args.id
 
@@ -121,11 +121,25 @@ def cmd_approve(args: argparse.Namespace) -> int:
 
 def cmd_validate(args: argparse.Namespace) -> int:
     """Handle validate subcommand."""
-    projects_root = Path(
-        os.path.join(os.getcwd(), args.projects_root.replace("./", ""))
-    ).resolve()
+    projects_root = _projects_root(args)
 
     project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        project.manifest()
+        if (project_path / "storyboard.json").exists():
+            project.load_storyboard()
+        if (project_path / "script.json").exists():
+            project.load_script()
+        print("ok")
+        return 0
+    except ProjectError as exc:
+        _print_error(str(exc))
+        return 2
+    except ValidationError as exc:
+        _print_error(f"validation error: {exc}")
+        return 2
 
     try:
         project = Project.load(project_path)

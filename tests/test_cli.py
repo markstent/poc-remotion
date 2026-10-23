@@ -30,3 +30,31 @@ def test_bad_stage_exits_two(tmp_path):
 def test_validate_ok_on_fresh_project(tmp_path):
     main(["init", "--id", "demo", "--projects-root", str(tmp_path)])
     assert main(["validate", "--id", "demo", "--projects-root", str(tmp_path)]) == 0
+
+
+def test_validate_detects_corrupt_storyboard(tmp_path):
+    import json
+
+    init_result = main(["init", "--id", "bad", "--projects-root", str(tmp_path)])
+    assert init_result == 0
+
+    bad_storyboard = {"invalid_field": "not-a-list", "_type": "storyboard"}
+    (tmp_path / "bad" / "storyboard.json").write_text(json.dumps(bad_storyboard) + "\n")
+
+    assert main(["validate", "--id", "bad", "--projects-root", str(tmp_path)]) == 2
+
+
+def test_status_missing_project_exits_two(tmp_path):
+    assert main(["status", "--id", "ghost", "--projects-root", str(tmp_path)]) == 2
+
+
+def test_projects_root_relative_path(tmp_path, monkeypatch, capsys):
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    monkeypatch.chdir(inner)
+    project_root = tmp_path / "proj-root"
+
+    assert main(["init", "--id", "myproj", "--projects-root", "../proj-root"]) == 0
+
+    outer_proj_dir = project_root / "myproj"
+    assert (outer_proj_dir / "manifest.json").exists()

@@ -265,6 +265,30 @@ def test_cli_brief_malformed_json_exits_two(tmp_path, capsys):
     assert "Traceback" not in err
 
 
+@pytest.mark.parametrize(
+    ("content", "label"),
+    [
+        ("[1]", "non-object entry"),
+        ('[{"question": "q"}]', "missing answer key"),
+        ('[{"question": "q", "answer": ""}]', "empty answer"),
+    ],
+)
+def test_cli_brief_rejects_bad_qa_entries(tmp_path, capsys, content, label):
+    """Non-object entries, missing keys and empty answers all exit 2 cleanly."""
+    project_root = _project_with_source(tmp_path)
+    qa_path = tmp_path / "qa.json"
+    qa_path.write_text(content)
+
+    result = main(
+        ["brief", "--id", "demo", "--qa-file", str(qa_path), "--projects-root", str(project_root)]
+    )
+
+    assert result == 2, label
+    err = capsys.readouterr().err
+    assert err != ""
+    assert "Traceback" not in err
+
+
 def test_cli_brief_happy_path(tmp_path, capsys, monkeypatch):
     """A well-formed qa file exits 0 and the summary names audience and duration."""
     project_root = _project_with_source(tmp_path)

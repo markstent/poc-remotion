@@ -92,6 +92,8 @@ def capture_brief(project: Project, client: LLMClient, qa: list[DiscoveryAnswer]
     )
 
     core = client.chat_json(system, user, BriefCore)
+    # Fresh build is equivalent to a merge because Brief has exactly these
+    # five core fields plus qa; revisit if Brief ever gains more fields.
     brief = Brief(**core.model_dump(), qa=qa)
     project.save_brief(brief)
     return brief

@@ -81,19 +81,48 @@ def test_repair_path_asserts_user_message():
     messages = second_payload["messages"]
     assert len(messages) == 2
     assert messages[0]["role"] == "system" and messages[0]["content"] == "s"
-    assert messages[1]["role"] == "user" and "Previous output:" in messages[1]["content"]
-    assert "Validation error:" in messages[1]["content"]
+    user_msg = messages[1]["content"]
+    assert "u" in user_msg and "Previous output:" in user_msg
+    assert "Validation error:" in user_msg and "valid JSON" in user_msg
 
 
 def test_both_attempts_fail_mentions_both_errors():
     """Second call fails again; raise LLMError with both error texts and last output."""
 
     bad1 = {"wrong": "shape"}
-    bad2 = "not json at all"
+    bad2 = "invalid json not parseable"
     responses = iter([json.dumps(bad1), bad2])
 
     client = LLMClient(api_key="k", _post=lambda *a: next(responses))
     with pytest.raises(LLMError) as excinfo:
         client.chat_json("s", "u", Storyboard)
     msg = str(excinfo.value)
-    assert "Last output: not json at all" in msg
+    assert "Last output: invalid json not parseable" in msg
+    assert "wrong" in msg and "parseable" in msg
+
+
+def test_envelope_first_repair_path():
+    """First call returns gateway envelope with schema-invalid content; second returns valid."""
+
+    captured_payloads = []
+    first = True
+    invalid_bare = '{"objectives": 123}'  # wrong shape, but valid JSON
+
+    def mock_post(url, key, payload):
+        nonlocal first
+        captured_payloads.append(payload)
+        if first:
+            first = False
+            envelope = {"choices": [{"message": {"content": invalid_bare}}]}
+            return json.dumps(envelope)
+        sb = _fixture_storyboard()
+        return json.dumps({"choices": [{"message": {"content": sb.model_dump_json()}}]})
+
+    client = LLMClient(api_key="k", _post=mock_post)
+    result = client.chat_json("s", "u", Storyboard)
+    assert isinstance(result, Storyboard) and result.objectives == ["x"]
+
+    second_payload = captured_payloads[1]
+    user_content = second_payload["messages"][1]["content"]
+    assert "Previous output:" in user_content and invalid_bare in user_content
+    assert "choices" not in user_content and "usage" not in user_content

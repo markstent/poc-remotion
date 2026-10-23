@@ -76,7 +76,9 @@ class LLMClient:
                 choices = outer.get("choices", [])
                 if isinstance(choices, list) and len(choices) > 0 and "message" in choices[0]:
                     content = choices[0]["message"].get("content", "")
-                    last_cleaned = _strip_code_fences(content.strip())
+                    stripped = _strip_code_fences(content.strip())
+                    cleaned = stripped
+                    last_cleaned = stripped
             except (json.JSONDecodeError, KeyError, IndexError):
                 pass
 

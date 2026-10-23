@@ -480,7 +480,14 @@ impl KindScene {
         let caption_in = spring_in(frame, &SPRING, duration_frames * 0.3);
         let svg_x = -1152.0 * 1.2 + truck_in * (1152.0 * 1.2);
         let text = self.on_screen.first().map(String::as_str).unwrap_or("");
-        let t = para(frame, ctx, text, 64, BOLD, DARK_TEAL, 0.0, baseline(172.8, 64), 1920.0, 1.1, TextAlign::Center);
+        // Auto-fit: the largest size that wraps to at most 3 lines inside the
+        // 1536px content width, so long captions never run to the screen edge.
+        let width = 1536.0;
+        let size = [72, 64, 56, 48]
+            .into_iter()
+            .find(|&s| wrap_count(frame, ctx, text, s, BOLD, width) <= 3)
+            .unwrap_or(48);
+        let t = para(frame, ctx, text, size, BOLD, DARK_TEAL, 192.0, baseline(172.8, size), width, 1.15, TextAlign::Center);
         fframes::svgr!(
             <g>
                 <g opacity={caption_in} transform={Transform::translate(0, rise(frame, &SPRING, duration_frames * 0.3, 50.0))}>{t}</g>

@@ -2,12 +2,22 @@ import json
 import os
 import re
 from collections.abc import Callable
+from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+
+def _strip_code_fences(text: str) -> str:
+    """Strip Markdown code fences from text."""
+    pattern = r"^```(?:json)?\n|```$"
+    return re.sub(pattern, "", text, flags=re.MULTILINE)
 
 
 class LLMError(Exception):
     """Raised when the LLM client encounters a failure."""
+
+
+T = TypeVar("T", bound=BaseModel)
 
 
 def _default_post(url: str, key: str, payload: dict) -> str:
@@ -42,58 +52,47 @@ class LLMClient:
         if not self._api_key:
             raise LLMError("LITELLM_API_KEY environment variable is missing or empty. Set api_key or LITELLM_API_KEY.")
 
-    def chat_json(self, system: str, user: str, schema: type[BaseModel]) -> BaseModel:
+    def chat_json(self, system: str, user: str, schema: type[T]) -> T:
         payload = {
             "model": self._model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "response_format": {"type": "json_schema", "json_schema": {"name": schema.__name__, "schema": schema.model_json_schema(), "strict": True}},
         }
 
         url = f"{self._base_url}/chat/completions"
         repair_count = 0
+        first_error: str | None = None
+        last_cleaned: str = ""
 
         while True:
             raw = self._post(url, self._api_key, payload)
+            cleaned = _strip_code_fences(raw.strip())
+
             try:
-                outer = json.loads(raw)
+                outer = json.loads(cleaned)
                 choices = outer.get("choices", [])
                 if isinstance(choices, list) and len(choices) > 0 and "message" in choices[0]:
                     content = choices[0]["message"].get("content", "")
-                else:
-                    # Fall back to treating raw response as direct JSON
-                    content = None
+                    cleaned = _strip_code_fences(content.strip())
+                    last_cleaned = cleaned
             except (json.JSONDecodeError, KeyError, IndexError):
-                content = None
-
-            if content is None:
-                cleaned = _strip_code_fences(raw.strip())
-            else:
-                cleaned = _strip_code_fences(content.strip())
+                pass
 
             try:
                 parsed = json.loads(cleaned)
                 return schema.model_validate(parsed)
-            except (json.JSONDecodeError, TypeError) as err:
+            except (json.JSONDecodeError, ValidationError, TypeError) as err:
                 repair_count += 1
+                if first_error is None:
+                    first_error = str(err)
                 if repair_count > 1:
-                    error_msgs = []
-                    if repair_count == 2:
-                        error_msgs.append(f"First attempt failed: {err}")
-                    error_msgs.append(f"{error_msgs[-1] or ''} Repair did not resolve the issue.")
-                    raise LLMError(". ".join(error_msgs)) from err
+                    raise LLMError(f"{first_error}. Repair failed: {err}. Last output: {last_cleaned}") from err
 
-                # Repair prompt: include original output and error for second attempt to fix
-                repair_payload = f"\n\nModel output was: {cleaned}\n\nPlease return valid JSON matching the schema."
+                # Honest repair prompt: system untouched, user message includes original + error + requested fix
+                repair_text = f"\n\nPrevious output: {cleaned}\n\nValidation error: {err}\n\nPlease return valid JSON matching the schema."
                 payload["messages"] = [
-                    {"role": "system", "content": system + repair_payload},
-                    *payload["messages"][2:],
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user + repair_text},
                 ]
-
-
-def _strip_code_fences(text: str) -> str:
-    """Strip Markdown code fences from text."""
-    pattern = r"^```(?:json)?\n|```$"
-    return re.sub(pattern, "", text, flags=re.MULTILINE)

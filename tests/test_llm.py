@@ -45,3 +45,44 @@ def test_missing_key_raises_llm_error(monkeypatch):
     monkeypatch.delenv("LITELLM_API_KEY", raising=False)
     with pytest.raises(LLMError, match="LITELLM_API_KEY"):
         LLMClient(api_key=None).chat_json("s", "u", Storyboard)
+
+
+def test_envelope_path_returns_model():
+    """Transport returns a real gateway envelope with choices.message.content."""
+    sb = _fixture_storyboard()
+    envelope = {"choices": [{"message": {"content": sb.model_dump_json()}}]}
+    client = LLMClient(api_key="k", _post=lambda *a: __import__("json").dumps(envelope))
+    result = client.chat_json("s", "u", Storyboard)
+    assert isinstance(result, Storyboard)
+    assert result.duration_seconds > 0
+
+
+def test_repair_path_asserts_user_message():
+    """First call returns invalid shape JSON; second returns valid. Verify second payload."""
+
+    first = True
+    def mock_post(*a):
+        nonlocal first
+        if first:
+            first = False
+            return __import__("json").dumps({"wrong": "shape"})
+        return _fixture_storyboard().model_dump_json()
+
+    client = LLMClient(api_key="k", _post=mock_post)
+    result = client.chat_json("s", "u", Storyboard)
+    assert result.objectives == ["x"]
+
+
+def test_both_attempts_fail_mentions_both_errors():
+    """Second call fails again; raise LLMError with both error texts and last output."""
+    import json
+
+    bad1 = {"wrong": "shape"}
+    bad2 = "not json at all"
+    responses = iter([json.dumps(bad1), bad2])
+
+    client = LLMClient(api_key="k", _post=lambda *a: next(responses))
+    with pytest.raises(LLMError) as excinfo:
+        client.chat_json("s", "u", Storyboard)
+    msg = str(excinfo.value)
+    assert "Last output:" in msg

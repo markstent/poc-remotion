@@ -47,6 +47,18 @@ def test_load_tts_config_missing_raises(tmp_path: Path) -> None:
         load_tts_config(missing)
 
 
+def test_load_tts_config_invalid_content_raises(tmp_path: Path) -> None:
+    bad = tmp_path / "tts.json"
+    bad.write_text('{"engine": "kokoro-onnx"}')  # voice missing
+
+    with pytest.raises(TTSConfigError, match="tts.json"):
+        load_tts_config(bad)
+
+    bad.write_text("not json at all")
+    with pytest.raises(TTSConfigError, match="tts.json"):
+        load_tts_config(bad)
+
+
 def test_synthesize_creates_cached_wav(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     adapter = KokoroAdapter(cache_dir=cache_dir, engine=FakeEngine())

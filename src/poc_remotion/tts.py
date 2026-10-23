@@ -42,7 +42,7 @@ def load_tts_config(path: Path = Path("config/tts.json")) -> TTSConfig:
         raise TTSConfigError(f"TTS config file not found: {path}")
     try:
         return TTSConfig.model_validate(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, ValidationError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as exc:
         raise TTSConfigError(f"Invalid TTS config file: {path}: {exc}") from exc
 
 
@@ -64,27 +64,30 @@ _LANG_TAGS = {"a": "en-us", "b": "en-gb"}
 def _build_engine(voice: str) -> TtsEngine:
     """Build the real kokoro-onnx engine, importing kokoro lazily.
 
-    ``voice`` only selects the language variant here; the voice itself is a
-    synthesize() argument (ruling R-C1: the adapter never reads the config).
+    ``voice`` is accepted for signature symmetry; the language tag is derived
+    per call inside ``_KokoroOnnxEngine.synthesize`` so one engine instance
+    serves voices with different prefixes correctly.
     """
-    lang_code = voice.split("_", 1)[0][:1]
-    if lang_code not in ("a", "b"):
-        lang_code = "a"
     from kokoro_onnx import Kokoro  # lazy import: keeps kokoro off the import path
 
-    return _KokoroOnnxEngine(Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin"), lang_code)
+    return _KokoroOnnxEngine(Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin"))
+
+
+def _lang_tag_for(voice: str) -> str:
+    """Map a voice id prefix to the misaki phonemisation tag."""
+    prefix = voice.split("_", 1)[0][:1]
+    return _LANG_TAGS.get(prefix, "en-us")
 
 
 class _KokoroOnnxEngine:
     """TtsEngine backed by a kokoro-onnx pipeline."""
 
-    def __init__(self, kokoro: "Kokoro", lang_code: str) -> None:
+    def __init__(self, kokoro: "Kokoro") -> None:
         self._kokoro = kokoro
-        self._lang_code = lang_code
 
     def synthesize(self, text: str, voice: str, out_path: Path) -> None:
         samples, sample_rate = self._kokoro.create(
-            text, voice=voice, lang=_LANG_TAGS.get(self._lang_code, "en-us")
+            text, voice=voice, lang=_lang_tag_for(voice)
         )
         with wave.open(str(out_path), "wb") as wav:
             wav.setnchannels(1)

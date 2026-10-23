@@ -60,7 +60,12 @@ def _wav_duration_seconds(path: Path) -> float:
 
 # kokoro-onnx's create() takes misaki language tags ("en-us"/"en-gb"),
 # not the bare voice-prefix letters derived above.
-_LANG_TAGS = {"a": "en-us", "b": "en-gb"}
+# MVP 1 pins every voice to en-us phonemisation: that is the sound the user
+# approved by ear for bf_emma in the voice spike. To revisit British
+# phonemisation for bf_ voices, restore {"a": "en-us", "b": "en-gb"} here and
+# CLEAR the project audio dirs first: the cache key covers voice + text only,
+# so stale phonemised wavs would otherwise be reused.
+_LANG_TAGS = {"a": "en-us", "b": "en-us"}
 
 
 def _build_engine(voice: str) -> TtsEngine:

@@ -109,10 +109,17 @@ class KokoroAdapter:
         self._cache_dir = cache_dir
         self._engine = engine
 
+    def cache_path(self, text: str, voice: str) -> Path:
+        """Return the content-addressed cache location for ``text`` and ``voice``.
+
+        Pure computation: no engine call, no filesystem access.
+        """
+        digest = hashlib.sha256(f"{voice}\n{text}".encode()).hexdigest()[:16]
+        return self._cache_dir / f"{digest}.wav"
+
     def synthesize(self, text: str, voice: str, out_path: Path) -> TtsResult:
         """Synthesize ``text`` with ``voice``, returning the cached wav."""
-        digest = hashlib.sha256(f"{voice}\n{text}".encode()).hexdigest()[:16]
-        cache_path = self._cache_dir / f"{digest}.wav"
+        cache_path = self.cache_path(text, voice)
         if not cache_path.exists():
             self._cache_dir.mkdir(parents=True, exist_ok=True)
             self._engine_for(voice).synthesize(text, voice, cache_path)

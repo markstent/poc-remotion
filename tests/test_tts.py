@@ -88,3 +88,18 @@ def test_zero_frame_wav_reports_zero_duration(tmp_path: Path) -> None:
     result = adapter.synthesize("Silence.", "af_heart", tmp_path / "unused.wav")
 
     assert result.duration_seconds == 0.0
+
+
+def test_cache_path_is_pure_computation(tmp_path: Path) -> None:
+    """cache_path derives the cache location without touching the engine."""
+    engine = FakeEngine()
+    adapter = KokoroAdapter(cache_dir=tmp_path / "cache", engine=engine)
+
+    path = adapter.cache_path("Hello there.", "bf_emma")
+
+    assert path == _cache_path(tmp_path / "cache", "bf_emma", "Hello there.")
+    assert engine.calls == []
+    assert not path.exists()
+    # The same scheme decides where synthesize lands.
+    result = adapter.synthesize("Hello there.", "bf_emma", tmp_path / "unused.wav")
+    assert result.path == str(path)

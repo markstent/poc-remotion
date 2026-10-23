@@ -65,6 +65,22 @@ class ScriptLine(BaseModel):
     end_seconds: float | None = None
 
 
+class NarrationLine(BaseModel):
+    """One narration cue: timed text plus its public audio file path."""
+
+    scene_id: str
+    text: str
+    start_seconds: float
+    end_seconds: float
+    file: str
+
+
+class NarrationDoc(BaseModel):
+    """The narration.json manifest consumed by the Remotion composition."""
+
+    lines: list[NarrationLine]
+
+
 class ScriptDoc(BaseModel):
     lines: list[ScriptLine]
     on_screen: dict[str, list[str]] = Field(default_factory=dict)
@@ -129,6 +145,8 @@ def generate_json_schemas(out_dir: Path) -> list[Path]:
         (Claim, "Claim"),
         (StoryboardScene, "StoryboardScene"),
         (ScriptLine, "ScriptLine"),
+        (NarrationLine, "NarrationLine"),
+        (NarrationDoc, "NarrationDoc"),
         (ApprovalState, "ApprovalState"),
         (Brief, "Brief"),
         (BriefCore, "BriefCore"),

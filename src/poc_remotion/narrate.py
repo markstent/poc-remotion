@@ -1,7 +1,9 @@
 """Narration pass: per-line synthesis and audio-true timing rewrite."""
 
+import json
+
 from poc_remotion.project import Project
-from poc_remotion.schemas import ScriptDoc, Storyboard
+from poc_remotion.schemas import NarrationDoc, NarrationLine, ScriptDoc, Storyboard
 from poc_remotion.tts import KokoroAdapter, TtsResult, load_tts_config
 
 NARRATION_GAP = 0.35  # seconds inserted between scenes
@@ -82,10 +84,12 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict[str, float | int]:
 
     Phase one synthesises all lines through the adapter cache; any engine
     failure raises NarrateError naming the line before any project JSON
-    changes. Phase two computes the timing pass and rewrites script.json and
-    storyboard.json in a single write phase: each line gains start_seconds
-    and end_seconds, each scene's seconds becomes its audio span, and
-    duration_seconds becomes the last line end plus SCENE_TAIL. Approvals
+    changes. Phase two computes the timing pass and rewrites script.json,
+    storyboard.json and narration.json in a single write phase: each line
+    gains start_seconds and end_seconds, each scene's seconds becomes its
+    audio span, and duration_seconds becomes the last line end plus
+    SCENE_TAIL. narration.json holds ``{"lines": [...]}`` with each line's
+    public-relative audio path for the composition. Approvals
     are untouched: timing is not a content change. Returns a summary dict
     ``{total_seconds, lines, audio_files}``.
 
@@ -128,7 +132,23 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict[str, float | int]:
         scene.seconds = spans[scene.id]
     respanned.duration_seconds = total
 
+    manifest = NarrationDoc(
+        lines=[
+            NarrationLine(
+                scene_id=line.scene_id,
+                text=line.text,
+                start_seconds=starts[i],
+                end_seconds=ends[i],
+                file=f"audio/{tts.cache_path(line.text, voice).name}",
+            )
+            for i, line in enumerate(script.lines)
+        ]
+    )
+
     project.save_script(timed)
     project.save_storyboard(respanned)
+    (project.dir / "narration.json").write_text(
+        json.dumps(manifest.model_dump(), indent=2) + "\n", encoding="utf-8"
+    )
 
     return {"total_seconds": total, "lines": len(script.lines), "audio_files": len(results)}

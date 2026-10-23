@@ -1,5 +1,6 @@
 """Tests for the narration pass with audio-true timings."""
 
+import json
 import wave
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from poc_remotion.narrate import (
 from poc_remotion.project import Project
 from poc_remotion.schemas import (
     Brief,
+    NarrationDoc,
     ScriptDoc,
     ScriptLine,
     Storyboard,
@@ -269,6 +271,27 @@ def test_narrate_engine_failure_leaves_project_untouched(
     assert (project.dir / "script.json").stat().st_mtime_ns == script_mtime
     assert (project.dir / "storyboard.json").stat().st_mtime_ns == sb_mtime
     assert engine.calls == ["first line", "second line"]
+
+
+def test_narrate_writes_narration_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """narration.json mirrors the timed script with public audio-relative files."""
+    project, tts, _engine, _root = _seed(tmp_path, monkeypatch)
+
+    run_narrate(project, tts)
+
+    manifest_path = project.dir / "narration.json"
+    assert manifest_path.exists()
+    doc = NarrationDoc.model_validate(json.loads(manifest_path.read_text()))
+    script = project.load_script()
+    assert len(doc.lines) == len(script.lines) == 3
+    for line, nline in zip(script.lines, doc.lines):
+        assert nline.scene_id == line.scene_id
+        assert nline.text == line.text
+        assert nline.start_seconds == line.start_seconds
+        assert nline.end_seconds == line.end_seconds
+        assert nline.file == f"audio/{tts.cache_path(line.text, 'bf_emma').name}"
 
 
 def test_narrate_second_run_is_noop_for_audio(

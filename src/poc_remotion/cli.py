@@ -16,6 +16,7 @@ from poc_remotion.render import GateError, RenderOptions, render_video
 from poc_remotion.schemas import DiscoveryAnswer
 from poc_remotion.script_draft import run_script
 from poc_remotion.storyboard import DURATION_TOLERANCE, run_storyboard
+from poc_remotion.subtitles import srt_from_script
 from poc_remotion.tts import KokoroAdapter, TTSConfigError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -144,6 +145,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     narrate_parser.add_argument("--id", required=True, help="Project identifier")
     narrate_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    export_srt_parser = subparsers.add_parser(
+        "export-srt", help="Export the timed narration script as an SRT sidecar"
+    )
+    export_srt_parser.add_argument("--id", required=True, help="Project identifier")
+    export_srt_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -469,6 +478,7 @@ def cmd_narrate(args: argparse.Namespace) -> int:
         f"total  {total:.2f}s  {summary['lines']} lines  "
         f"{summary['audio_files']} audio files"
     )
+    print("manifest  narration.json")
 
     if brief.duration_minutes is not None:
         target = brief.duration_minutes * 60
@@ -480,6 +490,38 @@ def cmd_narrate(args: argparse.Namespace) -> int:
                 f"{brief.duration_minutes:g} minute target window "
                 f"({low:.2f}s to {high:.2f}s)"
             )
+    return 0
+
+
+def cmd_export_srt(args: argparse.Namespace) -> int:
+    """Handle export-srt subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        script = project.load_script()
+        srt, skipped = srt_from_script(script)
+        out_dir = project.dir / "subtitles"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"{args.id}.srt"
+        out_path.write_text(srt, encoding="utf-8")
+    except ProjectError as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt script.json payloads (JSON decode, pydantic
+        # validation, non-mapping documents) and unwritable output paths,
+        # matching the handlers in cmd_validate, cmd_ingest, cmd_discover,
+        # cmd_brief, cmd_draft_storyboard, cmd_draft_script, cmd_claims and
+        # cmd_narrate.
+        _print_error(f"export-srt error: {exc}")
+        return 2
+
+    print(out_path)
+    if skipped:
+        print(f"skipped {skipped} untimed lines")
     return 0
 
 
@@ -536,6 +578,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_claims(args)
     if args.command == "narrate":
         return cmd_narrate(args)
+    if args.command == "export-srt":
+        return cmd_export_srt(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

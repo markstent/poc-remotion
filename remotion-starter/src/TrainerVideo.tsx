@@ -87,6 +87,27 @@ function lineAnchorTime(
 }
 
 /**
+ * The caption text to show at `timeSeconds`. Short cues from the narration
+ * manifest win (they track the spoken words); a line whose cues are missing
+ * falls back to its whole text, and between audio windows nothing shows.
+ */
+export function activeCaptionText(
+  narration: { lines: NarrationLine[] } | null,
+  script: ScriptDoc,
+  storyboard: Storyboard,
+  timeSeconds: number
+): string | null {
+  for (const line of narration?.lines ?? []) {
+    for (const cue of line.cues ?? []) {
+      if (cue.start_seconds <= timeSeconds && timeSeconds < cue.end_seconds) {
+        return cue.text;
+      }
+    }
+  }
+  return activeCaptionLine(script, storyboard, timeSeconds)?.text ?? null;
+}
+
+/**
  * The caption to show at `timeSeconds`. Lines with full timings win via
  * `start_seconds <= t < end_seconds`; between such windows nothing shows.
  * When a line's timings are null it can never win the timed search, so such
@@ -148,7 +169,7 @@ export function TrainerVideo({
       return { scene, from, durationInFrames: Math.round(scene.seconds * fps) };
     });
 
-  const caption = activeCaptionLine(script, storyboard, frame / fps);
+  const caption = activeCaptionText(narration ?? null, script, storyboard, frame / fps);
 
   return (
     <div style={{ position: "absolute", inset: 0, background: "#FFFFFF" }}>
@@ -194,7 +215,7 @@ export function TrainerVideo({
               lineHeight: 1.3
             }}
           >
-            {caption.text}
+            {caption}
           </div>
         </div>
       )}

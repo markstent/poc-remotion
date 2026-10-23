@@ -65,6 +65,14 @@ class ScriptLine(BaseModel):
     end_seconds: float | None = None
 
 
+class Cue(BaseModel):
+    """One short caption window carved out of a narration line's timing."""
+
+    text: str
+    start_seconds: float
+    end_seconds: float
+
+
 class NarrationLine(BaseModel):
     """One narration cue: timed text plus its public audio file path."""
 
@@ -73,6 +81,7 @@ class NarrationLine(BaseModel):
     start_seconds: float
     end_seconds: float
     file: str
+    cues: list[Cue] = Field(default_factory=list)
 
 
 class NarrationDoc(BaseModel):

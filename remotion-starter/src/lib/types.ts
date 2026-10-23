@@ -29,6 +29,13 @@ export interface ScriptDoc {
   on_screen: Record<string, string[]>;
 }
 
+/** One caption window carved out of a narration line's audio timing. */
+export interface CaptionCue {
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+}
+
 /** One narration audio line; file is public-relative, e.g. audio/<hash>.wav. */
 export interface NarrationLine {
   scene_id: string;
@@ -36,4 +43,5 @@ export interface NarrationLine {
   start_seconds: number;
   end_seconds: number;
   file: string;
+  cues?: CaptionCue[];
 }

@@ -358,3 +358,27 @@ def test_narrate_second_run_is_noop_for_audio(
     assert engine.calls == calls_after_first
     assert (project.dir / "script.json").read_bytes() == script_after_first
     assert second == first
+
+
+def test_narrate_manifest_includes_caption_cues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each narration line carries short timed cues spanning its audio window."""
+    long_text = " ".join(f"word{n}" for n in range(30)) + "."
+    project, tts, _engine, _root = _seed(
+        tmp_path,
+        monkeypatch,
+        lines=[("opening", long_text), ("closing", "Short line.")],
+    )
+
+    run_narrate(project, tts)
+
+    doc = NarrationDoc.model_validate(json.loads((project.dir / "narration.json").read_text()))
+    long_line, short_line = doc.lines
+    assert [len(cue.text.split()) for cue in long_line.cues] == [12, 12, 6]
+    assert long_line.cues[0].start_seconds == long_line.start_seconds
+    assert long_line.cues[-1].end_seconds == long_line.end_seconds
+    assert len(short_line.cues) == 1
+    for line in doc.lines:
+        for earlier, later in zip(line.cues, line.cues[1:]):
+            assert later.start_seconds == earlier.end_seconds

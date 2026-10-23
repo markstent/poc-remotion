@@ -4,6 +4,7 @@ import json
 
 from poc_remotion.project import Project
 from poc_remotion.schemas import NarrationDoc, NarrationLine, ScriptDoc, Storyboard
+from poc_remotion.subtitles import chunk_line
 from poc_remotion.tts import KokoroAdapter, TtsResult, load_tts_config
 
 NARRATION_GAP = 0.35  # seconds inserted between scenes
@@ -158,6 +159,7 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict[str, float | int]:
                 start_seconds=starts[i],
                 end_seconds=ends[i],
                 file=f"audio/{tts.cache_path(line.text, voice).name}",
+                cues=chunk_line(line.text, starts[i], ends[i]),
             )
             for i, line in enumerate(script.lines)
         ]

@@ -118,6 +118,8 @@ def generate_json_schemas(out_dir: Path) -> list[Path]:
         (StoryboardScene, "StoryboardScene"),
         (ScriptLine, "ScriptLine"),
         (ApprovalState, "ApprovalState"),
+        (Brief, "Brief"),
+        (DiscoveryAnswer, "DiscoveryAnswer"),
         (ProjectManifest, "ProjectManifest"),
     ]
 

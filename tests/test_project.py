@@ -87,5 +87,7 @@ def test_brief_present(tmp_path: Path) -> None:
     assert not p.brief_present()
     p.save_brief(Brief(qa=[DiscoveryAnswer(question="Q?", answer="A.")]))
     assert p.brief_present()
+    p.save_brief(Brief(audience="new hires"))
+    assert p.brief_present()
     p.save_brief(Brief())
     assert not p.brief_present()

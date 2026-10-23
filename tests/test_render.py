@@ -142,10 +142,8 @@ def test_render_copies_audio_to_public(tmp_path, monkeypatch):
     (p.dir / "narration.json").write_text(
         json.dumps(_narration_doc("audio/a.wav", "audio/b.wav"))
     )
-    public_audio = render_module.REMOTION_DIR / "public" / "audio"
-    # Clear any stale staged files so the pre-render assertions are meaningful.
-    for name in ("a.wav", "b.wav"):
-        (public_audio / name).unlink(missing_ok=True)
+    public_audio = tmp_path / "public" / "audio"
+    monkeypatch.setattr(render_module, "PUBLIC_AUDIO_DIR", public_audio)
 
     def _ok(cmd, **kw):
         assert (public_audio / "a.wav").exists(), "a.wav not staged before npx"
@@ -158,6 +156,8 @@ def test_render_copies_audio_to_public(tmp_path, monkeypatch):
 
     assert not (public_audio / "a.wav").exists(), "staged a.wav not cleaned up"
     assert not (public_audio / "b.wav").exists(), "staged b.wav not cleaned up"
+    # The staged directory itself is created and left empty.
+    assert public_audio.is_dir() and not any(public_audio.iterdir())
     # The project's own audio files remain untouched.
     assert (audio_dir / "a.wav").exists() and (audio_dir / "b.wav").exists()
     props = json.loads((p.dir / "output" / "props.json").read_text())
@@ -182,6 +182,38 @@ def test_render_without_audio_touches_nothing(tmp_path, monkeypatch):
         assert sorted(f.name for f in public_audio.iterdir()) == before
     else:
         assert not public_audio.exists()
+
+
+def test_render_empty_narration_lines_touches_nothing(tmp_path, monkeypatch):
+    """narration.json with an empty lines list stages nothing and adds the prop."""
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    (p.dir / "narration.json").write_text(json.dumps({"lines": []}))
+    public_audio = tmp_path / "public" / "audio"
+    monkeypatch.setattr(render_module, "PUBLIC_AUDIO_DIR", public_audio)
+
+    def _ok(cmd, **kw):
+        (p.dir / "output" / "video.mp4").touch()
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(render_module, "subprocess_run", _ok)
+    render_video(p)
+
+    assert list(public_audio.iterdir()) == []
+    props = json.loads((p.dir / "output" / "props.json").read_text())
+    assert props["narration"] == {"lines": []}
+
+
+def test_render_malformed_narration_fails_cleanly(tmp_path, monkeypatch):
+    """Unparseable narration.json raises RuntimeError naming the file; npx skipped."""
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    (p.dir / "narration.json").write_text("{not json")
+
+    def _fail(cmd, **kw):
+        raise AssertionError("npx must not be invoked for malformed narration.json")
+
+    monkeypatch.setattr(render_module, "subprocess_run", _fail)
+    with pytest.raises(RuntimeError, match="narration.json"):
+        render_video(p)
 
 
 def test_render_missing_narration_audio_fails(tmp_path, monkeypatch):

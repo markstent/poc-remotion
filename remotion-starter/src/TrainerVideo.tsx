@@ -160,9 +160,9 @@ export function TrainerVideo({
           </Sequence>
         );
       })}
-      {narration?.lines.map((line) => (
+      {narration?.lines.map((line, i) => (
         <Sequence
-          key={`${line.file}-${line.start_seconds}`}
+          key={`${line.file}-${line.start_seconds}-${i}`}
           from={Math.round(line.start_seconds * fps)}
         >
           <Audio src={staticFile(line.file)} />

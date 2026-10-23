@@ -40,23 +40,33 @@ def _load_narration(project: Project) -> dict | None:
     path = project.dir / NARRATION_FILENAME
     if not path.exists():
         return None
-    return json.loads(path.read_text())
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"narration.json is not valid JSON: {path}: {exc}") from exc
 
 
 def _stage_narration_audio(narration: dict, project: Project) -> list[Path]:
     """Copy narration audio into remotion-starter/public/audio (flat by name).
 
     Validates every referenced file against the project audio dir before
-    copying anything, so a missing file aborts before npx is invoked.
+    copying anything, so a missing file aborts before npx is invoked. The
+    file field must be the public-relative ``audio/<name>`` path the
+    composition resolves via staticFile.
 
     Raises:
         RuntimeError: when a narration line references a file that does not
-            exist in the project audio dir; the message names the file.
+            exist in the project audio dir, or uses a path outside
+            ``audio/``; the message names the file.
     """
     audio_dir = project.dir / "audio"
     names: list[str] = []
     for line in narration.get("lines", []):
         name = Path(line["file"]).name
+        if line["file"] != f"audio/{name}":
+            raise RuntimeError(
+                f"narration file path must be audio/<name>, got: {line['file']}"
+            )
         if not (audio_dir / name).exists():
             raise RuntimeError(
                 f"narration audio file missing from project audio dir: {line['file']}"
@@ -102,8 +112,6 @@ def render_video(project: Project, opts: RenderOptions | None = None) -> Path:
 
     narration = _load_narration(project)
     staged_audio: list[Path] = []
-    if narration is not None:
-        staged_audio = _stage_narration_audio(narration, project)
 
     output_dir = project.dir / "output"
     output_dir.mkdir(exist_ok=True)
@@ -125,6 +133,8 @@ def render_video(project: Project, opts: RenderOptions | None = None) -> Path:
     ]
 
     try:
+        if narration is not None:
+            staged_audio = _stage_narration_audio(narration, project)
         proc = subprocess_run(cmd, cwd=REMOTION_DIR, capture_output=True, text=True)
         if proc.returncode != 0:
             raise RuntimeError(

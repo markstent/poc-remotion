@@ -22,6 +22,9 @@ data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
+# Generated voice samples: never commit audio
+data/voice_samples/
+
 # macOS
 .DS_Store
 

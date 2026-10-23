@@ -3,8 +3,6 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel
-
 from poc_remotion.schemas import (
     ApprovalState,
     ProjectManifest,
@@ -25,8 +23,10 @@ class Project:
     dir: Path
     id: str
 
-    def __init__(self, dir: Path) -> None:
+    def __init__(self, dir: Path, id: str = "") -> None:
         self.dir = dir
+        if id:
+            self.id = id
 
     @classmethod
     def create(cls, dir: Path, id: str, model: str = "") -> "Project":
@@ -44,14 +44,18 @@ class Project:
         (dir / "approvals.json").write_text(json.dumps({"storyboard": False, "duration": False, "script": False}, indent=2) + "\n")
         (dir / "brief.json").write_text("{}\n")
 
-        return cls(dir)
+        project = cls(dir)
+        project.id = id
+        return project
 
     @classmethod
     def load(cls, dir: Path) -> "Project":
-        proj = cls(dir)
         if not (dir / "manifest.json").exists():
             raise ProjectError(f"manifest.json missing in {dir}")
-        return proj
+        manifest_json = json.loads((dir / "manifest.json").read_text())
+        project = cls(dir)
+        project.id = ProjectManifest(**manifest_json).id
+        return project
 
     def save_sources(self, sources: list[SourceRef]) -> None:
         data = [s.model_dump() for s in sources]
@@ -80,13 +84,6 @@ class Project:
         if not path.exists():
             raise ProjectError(f"script.json missing in {self.dir}")
         return ScriptDoc(**json.loads(path.read_text()))
-
-    def save_claims(self, claims: list[BaseModel]) -> None:
-        (self.dir / "claims.json").write_text(json.dumps([c.model_dump() for c in claims], indent=2) + "\n")
-        self._update_manifest()
-
-    def load_claims(self) -> list[BaseModel]:
-        return [BaseModel(**item) for item in json.loads((self.dir / "claims.json").read_text())]
 
     def record_approval(self, stage: str) -> None:
         path = self.dir / "approvals.json"

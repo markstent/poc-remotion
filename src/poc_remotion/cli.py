@@ -12,6 +12,7 @@ from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
 from poc_remotion.schemas import DiscoveryAnswer
+from poc_remotion.script_draft import run_script
 from poc_remotion.storyboard import run_storyboard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -116,6 +117,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     storyboard_parser.add_argument("--id", required=True, help="Project identifier")
     storyboard_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    script_parser = subparsers.add_parser(
+        "draft-script", help="Draft the narration script from the approved storyboard"
+    )
+    script_parser.add_argument("--id", required=True, help="Project identifier")
+    script_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -343,6 +352,35 @@ def cmd_draft_storyboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_draft_script(args: argparse.Namespace) -> int:
+    """Handle draft-script subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        script = run_script(project, LLMClient())
+        sb = project.load_storyboard()
+    except (DraftError, ProjectError, LLMError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt storyboard.json, brief.json or script.json payloads
+        # (JSON decode, pydantic validation, non-mapping documents), matching
+        # the handlers in cmd_validate, cmd_ingest, cmd_discover, cmd_brief
+        # and cmd_draft_storyboard.
+        _print_error(f"script error: {exc}")
+        return 2
+
+    print("id  lines")
+    for scene in sb.scenes:
+        count = sum(1 for line in script.lines if line.scene_id == scene.id)
+        print(f"{scene.id}  {count}")
+    print(f"total  {sum(len(line.text.split()) for line in script.lines)} words")
+    return 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -390,6 +428,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_brief(args)
     if args.command == "draft-storyboard":
         return cmd_draft_storyboard(args)
+    if args.command == "draft-script":
+        return cmd_draft_script(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

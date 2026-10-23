@@ -40,7 +40,7 @@ const REQUIRED_TOKENS = [
 const HEX_PATTERN = /^#[0-9A-F]{6}$/;
 
 export function loadTokens(): BrandTokens {
-  const brandPath = path.join(__dirname, "..", "..", "brand", "brand.json");
+  const brandPath = path.join(__dirname, "..", "..", "..", "brand", "brand.json");
 
   let raw: RawBrandJson;
   try {

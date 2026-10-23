@@ -67,14 +67,17 @@ def _full_project(tmp_path: Path) -> Project:
     return p
 
 
-def _fake_render(monkeypatch: pytest.MonkeyPatch, project: Project) -> None:
-    """Replace npx with a stub that leaves a video.mp4 in place."""
+def _fake_render(monkeypatch: pytest.MonkeyPatch, project: Project) -> list[list[str]]:
+    """Replace npx with a stub that leaves a video.mp4 in place and captures commands."""
+    captured: list[list[str]] = []
 
     def _ok(cmd, **kw):
+        captured.append(cmd)
         (project.dir / "output" / "video.mp4").touch()
         return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(render_module, "subprocess_run", _ok)
+    return captured
 
 
 def _boom_render(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,12 +92,13 @@ def _boom_render(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_export_bundle_complete(tmp_path, monkeypatch, capsys):
     """A gated, timed project exports a bundle with exactly the nine files."""
     p = _full_project(tmp_path)
-    _fake_render(monkeypatch, p)
+    captured = _fake_render(monkeypatch, p)
 
-    bundle = run_export(p)
+    bundle = run_export(p, scale=2.0)
 
     assert bundle == p.dir / "output" / "bundle"
     assert sorted(f.name for f in bundle.iterdir()) == BUNDLE_FILES
+    assert any(a == "--scale=2.0" for a in captured[0])
     srt, skipped = srt_from_script(p.load_script())
     assert skipped == 0
     assert (bundle / "demo.srt").read_text() == srt
@@ -134,7 +138,7 @@ def test_export_requires_timed_script(tmp_path, monkeypatch, capsys):
 
 
 def test_export_requires_gates(tmp_path, monkeypatch, capsys):
-    """Unapproved gates block export before any render runs."""
+    """Unapproved gates block export first, even when lines are also untimed."""
     p = Project.create(tmp_path / "demo", "demo")
     p.save_storyboard(
         Storyboard(
@@ -146,6 +150,7 @@ def test_export_requires_gates(tmp_path, monkeypatch, capsys):
             ],
         )
     )
+    # Untimed on purpose: the gates message must still win.
     p.save_script(
         ScriptDoc(
             lines=[

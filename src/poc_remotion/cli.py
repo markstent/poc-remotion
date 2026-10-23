@@ -617,7 +617,7 @@ def cmd_export(args: argparse.Namespace) -> int:
     try:
         project = Project.load(project_path)
         bundle = run_export(project, scale=args.scale)
-    except (ExportError, ProjectError, RuntimeError, TTSConfigError) as exc:
+    except (ExportError, ProjectError, RuntimeError, GateError, TTSConfigError) as exc:
         _print_error(str(exc))
         return 2
     except (TypeError, OSError, ValueError) as exc:

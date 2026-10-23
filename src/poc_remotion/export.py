@@ -7,6 +7,7 @@ from pathlib import Path
 from poc_remotion.brand import load_brand
 from poc_remotion.project import Project
 from poc_remotion.render import RenderOptions, render_video
+from poc_remotion.schemas import SourceRef
 from poc_remotion.subtitles import srt_from_script
 from poc_remotion.tts import load_tts_config
 
@@ -20,7 +21,7 @@ def _dump(data: object) -> str:
     return json.dumps(data, indent=2) + "\n"
 
 
-def _write_project_docs(project: Project, bundle: Path) -> None:
+def _write_project_docs(project: Project, bundle: Path, sources: list[SourceRef]) -> None:
     """Write the project's provenance documents into the bundle."""
     (bundle / "storyboard.json").write_text(
         _dump(project.load_storyboard().model_dump()), encoding="utf-8"
@@ -33,7 +34,7 @@ def _write_project_docs(project: Project, bundle: Path) -> None:
         encoding="utf-8",
     )
     (bundle / "sources.json").write_text(
-        _dump([source.model_dump() for source in project.load_sources()]),
+        _dump([source.model_dump() for source in sources]),
         encoding="utf-8",
     )
     (bundle / "manifest.json").write_text(
@@ -41,16 +42,8 @@ def _write_project_docs(project: Project, bundle: Path) -> None:
     )
 
 
-def _copy_repo_files(bundle: Path) -> None:
-    """Validate and copy the repo brand and TTS config into the bundle."""
-    # Imported here because cli.py imports this module: a module-level
-    # import would be circular.
-    from poc_remotion.cli import REPO_ROOT
-
-    brand_path = REPO_ROOT / "brand/brand.json"
-    tts_path = REPO_ROOT / "config/tts.json"
-    load_brand(brand_path)
-    load_tts_config(tts_path)
+def _copy_repo_files(bundle: Path, brand_path: Path, tts_path: Path) -> None:
+    """Copy the repo brand and TTS config into the bundle (pre-validated)."""
     shutil.copy2(brand_path, bundle / "brand.json")
     shutil.copy2(tts_path, bundle / "tts.json")
 
@@ -93,6 +86,18 @@ def run_export(project: Project, scale: float = 1.0) -> Path:
             "run narrate to write audio-true timings"
         )
 
+    # Validate every remaining input BEFORE deleting a previous good bundle,
+    # so a failed assembly cannot destroy it.
+    sources = project.load_sources()
+    # Imported here because cli.py imports this module: a module-level
+    # import would be circular.
+    from poc_remotion.cli import REPO_ROOT
+
+    brand_path = REPO_ROOT / "brand/brand.json"
+    tts_path = REPO_ROOT / "config/tts.json"
+    load_brand(brand_path)
+    load_tts_config(tts_path)
+
     video = render_video(project, RenderOptions(scale=scale))
 
     srt, _skipped = srt_from_script(script)
@@ -108,6 +113,6 @@ def run_export(project: Project, scale: float = 1.0) -> Path:
 
     shutil.copy2(video, bundle / "video.mp4")
     shutil.copy2(srt_path, bundle / f"{project.id}.srt")
-    _write_project_docs(project, bundle)
-    _copy_repo_files(bundle)
+    _write_project_docs(project, bundle, sources)
+    _copy_repo_files(bundle, brand_path, tts_path)
     return bundle

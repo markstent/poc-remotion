@@ -41,3 +41,5 @@ node_modules/
 src/fonts/
 remotion-starter/out/
 projects/
+kokoro-v1.0.onnx
+voices-v1.0.bin

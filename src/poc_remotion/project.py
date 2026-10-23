@@ -145,6 +145,18 @@ class Project:
     def all_approved(self) -> bool:
         return all(self.is_approved(stage) for stage in self.GATED_STAGES)
 
+    def reset_approvals(self) -> None:
+        """Set every gated stage to false in approvals.json.
+
+        Content-changing commands that invalidate earlier review (scene
+        revision) call this so stale approvals can never gate a render.
+        """
+        path = self.dir / "approvals.json"
+        raw = self._load_approvals()
+        for stage in self.GATED_STAGES:
+            raw[stage] = False
+        path.write_text(json.dumps(raw, indent=2) + "\n")
+
     def manifest(self) -> ProjectManifest:
         return ProjectManifest(**json.loads((self.dir / "manifest.json").read_text()))
 

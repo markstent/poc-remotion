@@ -13,6 +13,7 @@ from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.narrate import NarrateError, run_narrate
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
+from poc_remotion.revise import ReviseError, run_revise
 from poc_remotion.schemas import DiscoveryAnswer
 from poc_remotion.script_draft import run_script
 from poc_remotion.storyboard import DURATION_TOLERANCE, run_storyboard
@@ -153,6 +154,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     export_srt_parser.add_argument("--id", required=True, help="Project identifier")
     export_srt_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    revise_parser = subparsers.add_parser(
+        "revise", help="Revise one storyboard scene and reset the approval gates"
+    )
+    revise_parser.add_argument("--id", required=True, help="Project identifier")
+    revise_parser.add_argument("--scene", required=True, help="Scene id to revise")
+    revise_parser.add_argument(
+        "--instruction", required=True, help="What to change in the scene"
+    )
+    revise_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -525,6 +538,48 @@ def cmd_export_srt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _scene_summary(project: Project, scene_id: str) -> str:
+    """The scene's current summary, or an empty string when it is unknown."""
+    path = project.dir / "storyboard.json"
+    if not path.exists():
+        return ""
+    for scene in project.load_storyboard().scenes:
+        if scene.id == scene_id:
+            return scene.summary
+    return ""
+
+
+def cmd_revise(args: argparse.Namespace) -> int:
+    """Handle revise subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        old_summary = _scene_summary(project, args.scene)
+        result = run_revise(project, LLMClient(), args.scene, args.instruction)
+    except (ReviseError, ProjectError, LLMError, TTSConfigError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt storyboard.json, script.json or narration.json
+        # payloads (JSON decode, pydantic validation, non-mapping
+        # documents), matching the handlers in the other content commands.
+        _print_error(f"revise error: {exc}")
+        return 2
+
+    print(f"scene  {result['scene_id']}")
+    print(f"old summary  {old_summary}")
+    print(f"new summary  {result['summary']}")
+    print(f"seconds  {result['seconds']:g}")
+    print(
+        "warning: revision invalidates approvals; gates reset: "
+        + ", ".join(Project.GATED_STAGES)
+    )
+    return 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -580,6 +635,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_narrate(args)
     if args.command == "export-srt":
         return cmd_export_srt(args)
+    if args.command == "revise":
+        return cmd_revise(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

@@ -1,0 +1,152 @@
+"""Targeted scene revision: redraft one scene and reset the approval gates."""
+
+import json
+
+from pydantic import BaseModel, Field
+
+from poc_remotion.llm import LLMClient
+from poc_remotion.narrate import NarrationDoc
+from poc_remotion.project import Project
+from poc_remotion.schemas import ScriptLine, Storyboard
+from poc_remotion.storyboard import SCENE_ON_SCREEN_SPEC
+from poc_remotion.tts import KokoroAdapter, load_tts_config
+
+
+class ReviseError(Exception):
+    """Raised when a scene revision cannot complete."""
+
+
+class RevisedScene(BaseModel):
+    """The model's replacement for one scene: summary, pacing, contract, narration."""
+
+    summary: str
+    seconds: float = Field(..., gt=0)
+    on_screen: list[str]
+    text: str
+
+
+def _system_prompt(kind: str) -> str:
+    contract = "\n".join(f"- {entry}" for entry in SCENE_ON_SCREEN_SPEC[kind])
+    return (
+        "You revise a single scene of an existing training video. Keep the "
+        f"scene kind ({kind}) unchanged and keep the light, witty British "
+        f"tone. The {kind} scene renders this fixed on-screen contract, in "
+        "this order:\n"
+        f"{contract}\n\n"
+        "Answer with JSON of the form "
+        '{"summary": "...", "seconds": 30, "on_screen": ["..."], '
+        '"text": "spoken narration"}. The on_screen array must match the '
+        "kind's contract exactly in length."
+    )
+
+
+def _user_prompt(
+    sb: Storyboard, scene_id: str, current_lines: list[str], instruction: str
+) -> str:
+    scenes = "\n".join(
+        f"- {scene.id} ({scene.kind}, {scene.seconds:g}s): {scene.summary}"
+        for scene in sb.scenes
+    )
+    lines = "\n".join(f"- {text}" for text in current_lines)
+    return (
+        f"Full storyboard ({sb.duration_seconds:g} seconds total):\n{scenes}\n\n"
+        f"Current narration lines for scene {scene_id}:\n{lines}\n\n"
+        f"Revision instruction: {instruction}\n\n"
+        f"Rewrite scene {scene_id} accordingly. Return its new summary, "
+        "seconds, on_screen entries and one new narration text."
+    )
+
+
+def _prune_manifest(project: Project, scene_id: str) -> None:
+    """Drop the revised scene's cues from narration.json, when one exists."""
+    manifest_path = project.dir / "narration.json"
+    if not manifest_path.exists():
+        return
+    manifest = NarrationDoc.model_validate(json.loads(manifest_path.read_text()))
+    kept = NarrationDoc(lines=[line for line in manifest.lines if line.scene_id != scene_id])
+    manifest_path.write_text(
+        json.dumps(kept.model_dump(), indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _delete_orphaned_audio(project: Project, lines: list[ScriptLine]) -> None:
+    """Delete audio wavs no longer referenced by any remaining script line."""
+    voice = load_tts_config().voice
+    audio_dir = project.dir / "audio"
+    adapter = KokoroAdapter(cache_dir=audio_dir)
+    referenced = {adapter.cache_path(line.text, voice).name for line in lines}
+    for wav in audio_dir.glob("*.wav"):
+        if wav.name not in referenced:
+            wav.unlink()
+
+
+def run_revise(
+    project: Project, client: LLMClient, scene_id: str, instruction: str
+) -> dict:
+    """Redraft one storyboard scene and its script line, invalidating the gates.
+
+    The storyboard must exist and contain ``scene_id`` (otherwise
+    ReviseError names the valid ids). One chat_json call returns the
+    replacement summary, seconds, on_screen entries and narration text,
+    validated against RevisedScene; the on_screen length must match the
+    scene's existing kind, which never changes. The scene is updated in
+    place and every line of the scene is replaced by one untimed line;
+    other scenes and lines are untouched. All approval gates are reset,
+    narration.json drops the revised scene's cues, and orphaned wavs are
+    deleted. Returns ``{scene_id, summary, seconds, new_text}``.
+    """
+    if not (project.dir / "storyboard.json").exists():
+        raise ReviseError(f"storyboard.json missing in {project.dir}")
+    sb = project.load_storyboard()
+    scene = next((s for s in sb.scenes if s.id == scene_id), None)
+    if scene is None:
+        valid = ", ".join(s.id for s in sb.scenes)
+        raise ReviseError(f"unknown scene id: {scene_id} (valid ids: {valid})")
+    script = project.load_script()
+
+    current_lines = [line.text for line in script.lines if line.scene_id == scene_id]
+    system = _system_prompt(scene.kind)
+    user = _user_prompt(sb, scene_id, current_lines, instruction)
+    revised = client.chat_json(system, user, RevisedScene)
+
+    expected = len(SCENE_ON_SCREEN_SPEC[scene.kind])
+    if len(revised.on_screen) != expected:
+        raise ReviseError(
+            f"scene {scene_id} ({scene.kind}): expected {expected} on_screen "
+            f"entries, got {len(revised.on_screen)}"
+        )
+
+    new_sb = sb.model_copy(deep=True)
+    for target in new_sb.scenes:
+        if target.id == scene_id:
+            target.summary = revised.summary
+            target.seconds = revised.seconds
+            target.on_screen = revised.on_screen
+
+    replaced: list[ScriptLine] = []
+    inserted = False
+    for line in script.lines:
+        if line.scene_id == scene_id:
+            if not inserted:
+                replaced.append(ScriptLine(scene_id=scene_id, text=revised.text))
+                inserted = True
+            continue
+        replaced.append(line)
+    if not inserted:
+        # The scene had no script lines; the replacement still lands.
+        replaced.append(ScriptLine(scene_id=scene_id, text=revised.text))
+    new_script = script.model_copy(deep=True)
+    new_script.lines = replaced
+
+    project.save_storyboard(new_sb)
+    project.save_script(new_script)
+    project.reset_approvals()
+    _prune_manifest(project, scene_id)
+    _delete_orphaned_audio(project, new_script.lines)
+
+    return {
+        "scene_id": scene_id,
+        "summary": revised.summary,
+        "seconds": revised.seconds,
+        "new_text": revised.text,
+    }

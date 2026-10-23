@@ -6,7 +6,10 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from poc_remotion.project import Project
+from poc_remotion.schemas import NarrationDoc
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REMOTION_DIR = REPO_ROOT / "remotion-starter"
@@ -36,14 +39,21 @@ def _stderr_tail(text: str | None) -> str:
 
 
 def _load_narration(project: Project) -> dict | None:
-    """Return the parsed narration.json when present, else None."""
+    """Return the validated narration.json contents when present, else None.
+
+    Malformed JSON or a schema-invalid document raises RuntimeError naming
+    narration.json, so the failure surfaces before npx runs.
+    """
     path = project.dir / NARRATION_FILENAME
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text())
+        doc = NarrationDoc.model_validate(json.loads(path.read_text()))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"narration.json is not valid JSON: {path}: {exc}") from exc
+    except ValidationError as exc:
+        raise RuntimeError(f"narration.json is invalid: {path}: {exc}") from exc
+    return doc.model_dump()
 
 
 def _stage_narration_audio(narration: dict, project: Project) -> list[Path]:

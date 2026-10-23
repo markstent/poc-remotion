@@ -11,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 if TYPE_CHECKING:
     from kokoro_onnx import Kokoro
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class TTSConfigError(Exception):
     """Raised when the TTS config file is missing or invalid."""
@@ -36,7 +38,7 @@ class TtsEngine(Protocol):
     def synthesize(self, text: str, voice: str, out_path: Path) -> None: ...
 
 
-def load_tts_config(path: Path = Path("config/tts.json")) -> TTSConfig:
+def load_tts_config(path: Path = REPO_ROOT / "config" / "tts.json") -> TTSConfig:
     """Load and validate the TTS voice pick from ``path``."""
     if not path.is_file():
         raise TTSConfigError(f"TTS config file not found: {path}")
@@ -70,7 +72,9 @@ def _build_engine(voice: str) -> TtsEngine:
     """
     from kokoro_onnx import Kokoro  # lazy import: keeps kokoro off the import path
 
-    return _KokoroOnnxEngine(Kokoro("kokoro-v1.0.onnx", "voices-v1.0.bin"))
+    return _KokoroOnnxEngine(
+        Kokoro(REPO_ROOT / "kokoro-v1.0.onnx", REPO_ROOT / "voices-v1.0.bin")
+    )
 
 
 def _lang_tag_for(voice: str) -> str:

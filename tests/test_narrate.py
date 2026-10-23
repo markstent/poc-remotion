@@ -107,13 +107,6 @@ def _seed(
         for stage in project.GATED_STAGES:
             project.record_approval(stage)
 
-    # run_narrate reads the voice from config/tts.json relative to the cwd.
-    (tmp_path / "config").mkdir(exist_ok=True)
-    (tmp_path / "config" / "tts.json").write_text(
-        '{"engine": "kokoro-onnx", "voice": "bf_emma"}\n'
-    )
-    monkeypatch.chdir(tmp_path)
-
     texts = [text for _, text in lines]
     if durations is None:
         durations = {text: 0.5 for text in texts}
@@ -138,9 +131,13 @@ def test_narrate_produces_timings(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert starts == pytest.approx([0.0, 0.65, 3.0])
     assert ends == pytest.approx([0.5, 1.15, 3.5])
     sb = project.load_storyboard()
-    # Span = last line end - scene start + tail: 1.15 + 0.3 and 0.5 + 0.3.
-    assert [scene.seconds for scene in sb.scenes] == pytest.approx([1.45, 0.8])
+    # Opening spans to its planned 3.0: the gap to the next scene is
+    # carried inside the span. Closing ends at its last line plus the
+    # tail: 0.5 + 0.3. Spans sum to the total, matching the packed
+    # composition timeline.
+    assert [scene.seconds for scene in sb.scenes] == pytest.approx([3.0, 0.8])
     assert sb.duration_seconds == pytest.approx(3.8)
+    assert sum(scene.seconds for scene in sb.scenes) == pytest.approx(sb.duration_seconds)
     assert summary["total_seconds"] == pytest.approx(3.8)
     assert summary["lines"] == 3
     assert summary["audio_files"] == 3
@@ -203,15 +200,18 @@ def test_narrate_long_audio_grows_scene(
 
     assert result == 0
     sb = project.load_storyboard()
-    # The 3s scene grew to fit both lines (40.0s + gap + 0.5s, ending at
-    # 40.65) plus the tail.
-    assert sb.scenes[0].seconds == pytest.approx(40.95)
+    # The 3s scene grew to carry the gap to its successor: the next scene
+    # start (40.65 + 0.35 = 41.0) becomes opening's whole span; closing
+    # ends at its last line plus the tail (0.5 + 0.3).
+    assert sb.scenes[0].seconds == pytest.approx(41.0)
+    assert sb.scenes[1].seconds == pytest.approx(0.8)
+    assert sum(scene.seconds for scene in sb.scenes) == pytest.approx(sb.duration_seconds)
     script = project.load_script()
     # The next scene is pushed past the overrun (40.65 + gap), never clipped.
     assert script.lines[2].start_seconds == pytest.approx(41.0)
     assert sb.duration_seconds == pytest.approx(41.8)
     out = capsys.readouterr().out
-    assert "40.95" in out
+    assert "41.00" in out
     assert "41.80" in out
     # 41.8s sits far outside the 5 minute target window: warned, not failed.
     assert "warning" in out
@@ -294,26 +294,67 @@ def test_narrate_writes_narration_manifest(
         assert nline.file == f"audio/{tts.cache_path(line.text, 'bf_emma').name}"
 
 
+def test_narrate_timeline_is_packed_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spans sum to the total and no audio lands past the composition end.
+
+    The seed is plan-dominated (the closing scene's planned 3.0 start
+    beats the previous line end plus the gap), the exact case that used
+    to leave a silent gap outside the packed timeline.
+    """
+    project, tts, _engine, _root = _seed(tmp_path, monkeypatch)
+
+    summary = run_narrate(project, tts)
+    sb = project.load_storyboard()
+    script = project.load_script()
+
+    assert sum(scene.seconds for scene in sb.scenes) == pytest.approx(
+        summary["total_seconds"]
+    )
+    assert sb.duration_seconds == pytest.approx(summary["total_seconds"])
+    for line in script.lines:
+        assert line.end_seconds is not None
+        assert line.end_seconds <= sb.duration_seconds
+
+
+def test_narrate_empty_scene_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A storyboard scene with no script lines is a drafting bug: named error."""
+    project, tts, engine, _root = _seed(
+        tmp_path,
+        monkeypatch,
+        lines=[("opening", "first line"), ("opening", "second line")],
+    )
+
+    with pytest.raises(NarrateError, match="closing"):
+        run_narrate(project, tts)
+
+    assert engine.calls == []
+
+
 def test_narrate_second_run_is_noop_for_audio(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The content-addressed cache means a rerun synthesises nothing new.
 
-    The scenario is audio-dominated (scene plan 0.5s against 0.5s of audio),
-    matching a project narrated straight after draft-script: audio spans
-    drive every scene start, so the recomputed plan reproduces run 1 exactly.
+    Spans carry each gap to the next scene, so a rerun's cumulative plan
+    reproduces the previous run's absolute starts and the rewrite is a
+    byte-identical noop.
     """
     project, tts, engine, _root = _seed(
         tmp_path,
         monkeypatch,
-        lines=[("opening", "first line")],
+        lines=[("opening", "first line"), ("closing", "third line")],
         seconds=(0.5, 0.5),
     )
 
     first = run_narrate(project, tts)
+    calls_after_first = list(engine.calls)
     script_after_first = (project.dir / "script.json").read_bytes()
     second = run_narrate(project, tts)
 
-    assert len(engine.calls) == 1
+    assert engine.calls == calls_after_first
     assert (project.dir / "script.json").read_bytes() == script_after_first
     assert second == first

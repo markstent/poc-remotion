@@ -43,10 +43,14 @@ def _compute_timings(
 
     Scene starts follow the storyboard's cumulative plan but never begin
     before the previous scene's last line plus NARRATION_GAP. Line starts
-    stack each previous duration plus LINE_GAP. A scene's span reaches from
-    its start to its last line end plus SCENE_TAIL, and the new total is the
-    final line end plus SCENE_TAIL. Returns line starts, line ends, spans by
-    scene id, and the total. Requires at least one scene.
+    stack each previous duration plus LINE_GAP. Every scene's span but the
+    last reaches exactly to its successor's start, carrying the narration
+    gap inside the span, so the spans sum to the total and the
+    composition's packed (contiguous) timeline matches these absolute
+    times. The last scene's span ends at its last line plus SCENE_TAIL,
+    and the new total is the final line end plus SCENE_TAIL. Returns line
+    starts, line ends, spans by scene id, and the total. Requires at least
+    one scene and no empty scenes.
     """
     planned_starts: list[float] = []
     running = 0.0
@@ -72,7 +76,14 @@ def _compute_timings(
             starts[i] = start
             ends[i] = end
             last_end = end
-        spans[scene.id] = last_end - scene_start + SCENE_TAIL
+        if si + 1 < len(sb.scenes):
+            # Carry the gap to the next scene: the composition packs scenes
+            # contiguously, so this scene's span must reach its successor's
+            # start exactly or later audio falls outside the timeline.
+            next_start = max(planned_starts[si + 1], last_end + NARRATION_GAP)
+            spans[scene.id] = next_start - scene_start
+        else:
+            spans[scene.id] = last_end - scene_start + SCENE_TAIL
         prev_end = last_end
         last_line_end = last_end
 
@@ -93,9 +104,9 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict[str, float | int]:
     are untouched: timing is not a content change. Returns a summary dict
     ``{total_seconds, lines, audio_files}``.
 
-    Scene starts are rerun-stable only when audio spans drive them; on an
-    immediate rerun a plan-dominated boundary can pull a scene start earlier
-    before the timings converge.
+    Scene starts are rerun-stable: every span carries its gap to the next
+    scene, so a rerun's cumulative plan reproduces the previous run's
+    absolute starts exactly.
     """
     missing = [stage for stage in project.GATED_STAGES if not project.is_approved(stage)]
     if missing:
@@ -113,6 +124,13 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict[str, float | int]:
     unknown = sorted({line.scene_id for line in script.lines} - known)
     if unknown:
         raise NarrateError(f"script references unknown scenes: {', '.join(unknown)}")
+    empty = [scene.id for scene in sb.scenes if not any(
+        line.scene_id == scene.id for line in script.lines
+    )]
+    if empty:
+        raise NarrateError(
+            f"storyboard scene with no script lines: {', '.join(empty)}"
+        )
 
     # R-C1: the CLI layer owns the config; the adapter only receives the
     # voice per synthesize call and never reads the config itself.

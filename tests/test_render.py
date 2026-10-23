@@ -216,6 +216,32 @@ def test_render_malformed_narration_fails_cleanly(tmp_path, monkeypatch):
         render_video(p)
 
 
+def test_render_invalid_narration_line_fails_cleanly(tmp_path, monkeypatch):
+    """A narration line missing 'file' fails schema validation naming narration.json."""
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    (p.dir / "narration.json").write_text(
+        json.dumps(
+            {
+                "lines": [
+                    {
+                        "scene_id": "s1",
+                        "text": "line 0",
+                        "start_seconds": 0.0,
+                        "end_seconds": 1.0,
+                    }
+                ]
+            }
+        )
+    )
+
+    def _fail(cmd, **kw):
+        raise AssertionError("npx must not be invoked for invalid narration.json")
+
+    monkeypatch.setattr(render_module, "subprocess_run", _fail)
+    with pytest.raises(RuntimeError, match="narration.json"):
+        render_video(p)
+
+
 def test_render_missing_narration_audio_fails(tmp_path, monkeypatch):
     """A narration line referencing a missing file aborts before npx runs."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])

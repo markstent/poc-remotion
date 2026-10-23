@@ -20,7 +20,7 @@ from poc_remotion.schemas import (
     Storyboard,
     StoryboardScene,
 )
-from poc_remotion.tts import KokoroAdapter
+from poc_remotion.tts import KokoroAdapter, TTSConfigError
 
 _PROJECT_ID = "demo"
 _VOICE = "bf_emma"
@@ -92,12 +92,8 @@ def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Project, Kok
     for stage in project.GATED_STAGES:
         project.record_approval(stage)
 
-    # run_narrate and run_revise read the voice from config/tts.json.
-    (tmp_path / "config").mkdir(exist_ok=True)
-    (tmp_path / "config" / "tts.json").write_text(
-        '{"engine": "kokoro-onnx", "voice": "bf_emma"}\n'
-    )
-    monkeypatch.chdir(tmp_path)
+    # run_narrate and run_revise read the voice from the repo-anchored
+    # config/tts.json (bf_emma); no cwd setup is needed.
 
     tts = KokoroAdapter(cache_dir=project.dir / "audio", engine=FakeEngine())
     run_narrate(project, tts)
@@ -272,15 +268,17 @@ def test_revise_on_screen_length_enforced(tmp_path: Path, monkeypatch: pytest.Mo
 def test_revise_missing_tts_config_fails_before_writes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """No config/tts.json: exit 2 before any write and before the LLM call."""
+    """A broken TTS config: exit 2 before any write and before the LLM call."""
     project, _tts = _seed(tmp_path, monkeypatch)
-    no_config = tmp_path / "no-config"
-    no_config.mkdir(exist_ok=True)
-    monkeypatch.chdir(no_config)  # no config/tts.json in sight
     sb_bytes = (project.dir / "storyboard.json").read_bytes()
     script_bytes = (project.dir / "script.json").read_bytes()
     approvals_bytes = (project.dir / "approvals.json").read_bytes()
     client = FakeClient(_GOOD_REPLY)
+
+    def _broken() -> str:
+        raise TTSConfigError("config/tts.json not found")
+
+    monkeypatch.setattr("poc_remotion.revise.load_tts_config", _broken)
     monkeypatch.setattr(cli, "LLMClient", lambda: client)
 
     result = main(
@@ -303,6 +301,29 @@ def test_revise_missing_tts_config_fails_before_writes(
     assert (project.dir / "storyboard.json").read_bytes() == sb_bytes
     assert (project.dir / "script.json").read_bytes() == script_bytes
     assert (project.dir / "approvals.json").read_bytes() == approvals_bytes
+
+
+def test_revise_malformed_manifest_fails_before_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed narration.json aborts the revision with nothing applied."""
+    project, _tts = _seed(tmp_path, monkeypatch)
+    (project.dir / "narration.json").write_text("{not json")
+    sb_bytes = (project.dir / "storyboard.json").read_bytes()
+    script_bytes = (project.dir / "script.json").read_bytes()
+    approvals_bytes = (project.dir / "approvals.json").read_bytes()
+    wav_names = sorted(p.name for p in (project.dir / "audio").glob("*.wav"))
+    client = FakeClient(_GOOD_REPLY)
+
+    with pytest.raises(ReviseError, match="narration.json"):
+        run_revise(project, client, "opening", "tighten")
+
+    assert (project.dir / "storyboard.json").read_bytes() == sb_bytes
+    assert (project.dir / "script.json").read_bytes() == script_bytes
+    assert (project.dir / "approvals.json").read_bytes() == approvals_bytes
+    assert sorted(p.name for p in (project.dir / "audio").glob("*.wav")) == wav_names
+    for stage in project.GATED_STAGES:
+        assert project.is_approved(stage) is True
 
 
 def test_revise_scene_without_lines_gets_new_line(

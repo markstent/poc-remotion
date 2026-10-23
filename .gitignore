@@ -28,5 +28,11 @@ data/processed/*
 # Superpowers brainstorm sessions
 .superpowers/
 
+# Isolated worktrees
+.worktrees/
+
+# Node
+node_modules/
+
 # Licensed font binaries: licence unconfirmed, keep out of Git
 src/fonts/

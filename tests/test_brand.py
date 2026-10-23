@@ -86,3 +86,10 @@ def test_contrast_failure_listed():
     brand.contrast_pairs.append(("lime", "paleBlue", 4.5))
     problems = validate_brand(brand, Path("src/fonts"))
     assert any("contrast" in p for p in problems)
+
+
+def test_validate_brand_missing_fonts_dir(tmp_path):
+    """validate_brand reports missing fonts when dir is absent."""
+    problems = validate_brand(load_brand(), tmp_path / "does-not-exist")
+    assert problems
+    assert all(p.startswith("missing font ") for p in problems)

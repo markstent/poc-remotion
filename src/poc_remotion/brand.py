@@ -113,16 +113,8 @@ def load_brand(path: Path = Path("brand/brand.json")) -> BrandConfig:
     raw = path.read_text()
     data = loads(raw)
 
-    model_data = {
-        "version": data.get("version", "1.0"),
-        "tokens": data.get("tokens", APPROVED_TOKENS),
-        "font_family": data.get("font_family", "PP Pangram Sans"),
-        "fonts_dir": data.get("fonts_dir", "src/fonts"),
-        "fonts": data.get("fonts", {}),
-        "contrast_pairs": data.get("contrast_pairs", []),
-    }
-
-    return BrandConfig(**model_data)
+    # Let BrandConfig handle defaults via its model_config and model_validate; no manual rebuild.
+    return BrandConfig(**data)
 
 
 def contrast_ratio(hex_a: str, hex_b: str) -> float:
@@ -183,7 +175,9 @@ def validate_brand(brand: BrandConfig, fonts_dir: Path) -> list[str]:
 
     fonts_path = fonts_dir.resolve()
 
-    # Don't report missing directory as a problem; just proceed without font checks.
+    if not fonts_path.is_dir():
+        # Fonts directory missing: return all font entries as missing
+        return [f"missing font {weight}: {filename}" for weight, filename in brand.fonts.items()]
 
     token_to_hex: dict[str, str] = {}
     for key, value in brand.tokens.items():

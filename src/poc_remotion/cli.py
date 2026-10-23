@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from poc_remotion.brand import load_brand, validate_brand
 from poc_remotion.project import Project, ProjectError
 
 
@@ -132,12 +133,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
             project.load_script()
         if (project_path / "sources.json").exists():
             project.load_sources()
+
+        # Run brand validation as per brief requirement
+        brand = load_brand(Path("brand/brand.json"))
+        problems = validate_brand(brand, Path(brand.fonts_dir))
+        if problems:
+            for problem in problems:
+                _print_error(problem)
+            return 2
+
         print("ok")
         return 0
     except ProjectError as exc:
         _print_error(str(exc))
         return 2
     except ValueError as exc:
+        # Covers pydantic.ValidationError as well
         _print_error(f"validation error: {exc}")
         return 2
 

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from poc_remotion.brand import load_brand, validate_brand
+from poc_remotion.claims import run_claims
 from poc_remotion.discovery import DraftError, capture_brief, run_discovery
 from poc_remotion.ingest import ingest_markdown
 from poc_remotion.llm import LLMClient, LLMError
@@ -125,6 +126,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     script_parser.add_argument("--id", required=True, help="Project identifier")
     script_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    claims_parser = subparsers.add_parser(
+        "claims", help="Extract the claim register from the approved script"
+    )
+    claims_parser.add_argument("--id", required=True, help="Project identifier")
+    claims_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -381,6 +390,34 @@ def cmd_draft_script(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_claims(args: argparse.Namespace) -> int:
+    """Handle claims subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        claims = run_claims(project, LLMClient())
+    except (DraftError, ProjectError, LLMError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt script.json, sources.json or claims.json payloads
+        # (JSON decode, pydantic validation, non-mapping documents), matching
+        # the handlers in cmd_validate, cmd_ingest, cmd_discover, cmd_brief,
+        # cmd_draft_storyboard and cmd_draft_script.
+        _print_error(f"claims error: {exc}")
+        return 2
+
+    for claim in claims:
+        print(f"{claim.id}  {claim.status}  {claim.text}")
+    unresolved = sum(1 for claim in claims if claim.status == "unresolved")
+    if unresolved:
+        print(f"{unresolved} unresolved")
+    return 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -430,6 +467,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_draft_storyboard(args)
     if args.command == "draft-script":
         return cmd_draft_script(args)
+    if args.command == "claims":
+        return cmd_claims(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

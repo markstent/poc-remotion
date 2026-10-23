@@ -125,20 +125,19 @@ def test_narrate_produces_timings(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     script = project.load_script()
     starts = [line.start_seconds for line in script.lines]
     ends = [line.end_seconds for line in script.lines]
-    # Scene opening starts at its planned 0.0; line 1 sits after 0.5s of
-    # audio plus the line gap; closing starts at its planned 3.0 because
-    # the plan (3.0) beats the previous end plus the narration gap (1.5).
-    assert starts == pytest.approx([0.0, 0.65, 3.0])
-    assert ends == pytest.approx([0.5, 1.15, 3.5])
+    # Scene opening starts at 0.0; line 1 sits after 0.5s of audio plus the
+    # line gap; closing starts one narration gap after the previous line
+    # ends (1.15 + 0.35): the plan never holds a scene open.
+    assert starts == pytest.approx([0.0, 0.65, 1.5])
+    assert ends == pytest.approx([0.5, 1.15, 2.0])
     sb = project.load_storyboard()
-    # Opening spans to its planned 3.0: the gap to the next scene is
-    # carried inside the span. Closing ends at its last line plus the
-    # tail: 0.5 + 0.3. Spans sum to the total, matching the packed
-    # composition timeline.
-    assert [scene.seconds for scene in sb.scenes] == pytest.approx([3.0, 0.8])
-    assert sb.duration_seconds == pytest.approx(3.8)
+    # Opening spans to its successor's start: the gap is carried inside the
+    # span. Closing ends at its last line plus the tail: 0.5 + 0.3. Spans
+    # sum to the total, matching the packed composition timeline.
+    assert [scene.seconds for scene in sb.scenes] == pytest.approx([1.5, 0.8])
+    assert sb.duration_seconds == pytest.approx(2.3)
     assert sum(scene.seconds for scene in sb.scenes) == pytest.approx(sb.duration_seconds)
-    assert summary["total_seconds"] == pytest.approx(3.8)
+    assert summary["total_seconds"] == pytest.approx(2.3)
     assert summary["lines"] == 3
     assert summary["audio_files"] == 3
     assert len(list((project.dir / "audio").glob("*.wav"))) == 3
@@ -299,9 +298,9 @@ def test_narrate_timeline_is_packed_safe(
 ) -> None:
     """Spans sum to the total and no audio lands past the composition end.
 
-    The seed is plan-dominated (the closing scene's planned 3.0 start
-    beats the previous line end plus the gap), the exact case that used
-    to leave a silent gap outside the packed timeline.
+    The seed's planned seconds (3.0 and 2.0) differ from the audio-driven
+    spans, the case that used to leave a silent gap outside the packed
+    timeline before the plan floor was removed.
     """
     project, tts, _engine, _root = _seed(tmp_path, monkeypatch)
 

@@ -139,8 +139,10 @@ def test_revise_updates_scene_and_line(tmp_path: Path, monkeypatch: pytest.Monke
     ]
     assert script.lines[0].start_seconds is None
     assert script.lines[0].end_seconds is None
-    assert script.lines[1].start_seconds == pytest.approx(3.0)
-    assert script.lines[1].end_seconds == pytest.approx(3.5)
+    # The untouched closing line is re-timed from audio: one gap after the
+    # revised opening's audio, not the storyboard's planned seconds.
+    assert script.lines[1].start_seconds == pytest.approx(1.5)
+    assert script.lines[1].end_seconds == pytest.approx(2.0)
 
     # The prompt embeds the full storyboard, the scene's current lines and
     # the instruction; the system prompt carries the kind's on-screen spec.

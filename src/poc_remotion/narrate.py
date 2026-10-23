@@ -42,23 +42,18 @@ def _compute_timings(
 ) -> tuple[list[float], list[float], dict[str, float], float]:
     """Place every line after its real audio, scene by scene in plan order.
 
-    Scene starts follow the storyboard's cumulative plan but never begin
-    before the previous scene's last line plus NARRATION_GAP. Line starts
-    stack each previous duration plus LINE_GAP. Every scene's span but the
-    last reaches exactly to its successor's start, carrying the narration
-    gap inside the span, so the spans sum to the total and the
+    The measured audio drives the timeline: each scene starts NARRATION_GAP
+    after the previous scene's last line ends (the storyboard's planned
+    seconds are a pre-narration estimate and never stretch the video). Line
+    starts stack each previous duration plus LINE_GAP. Every scene's span
+    but the last reaches exactly to its successor's start, carrying the
+    narration gap inside the span, so the spans sum to the total and the
     composition's packed (contiguous) timeline matches these absolute
     times. The last scene's span ends at its last line plus SCENE_TAIL,
     and the new total is the final line end plus SCENE_TAIL. Returns line
     starts, line ends, spans by scene id, and the total. Requires at least
     one scene and no empty scenes.
     """
-    planned_starts: list[float] = []
-    running = 0.0
-    for scene in sb.scenes:
-        planned_starts.append(running)
-        running += scene.seconds
-
     starts = [0.0] * len(script.lines)
     ends = [0.0] * len(script.lines)
     spans: dict[str, float] = {}
@@ -67,9 +62,7 @@ def _compute_timings(
 
     for si, scene in enumerate(sb.scenes):
         indices = [i for i, line in enumerate(script.lines) if line.scene_id == scene.id]
-        scene_start = planned_starts[si]
-        if prev_end is not None:
-            scene_start = max(scene_start, prev_end + NARRATION_GAP)
+        scene_start = 0.0 if prev_end is None else prev_end + NARRATION_GAP
         last_end = scene_start
         for k, i in enumerate(indices):
             start = scene_start + sum(durations[j] for j in indices[:k]) + LINE_GAP * k
@@ -81,8 +74,7 @@ def _compute_timings(
             # Carry the gap to the next scene: the composition packs scenes
             # contiguously, so this scene's span must reach its successor's
             # start exactly or later audio falls outside the timeline.
-            next_start = max(planned_starts[si + 1], last_end + NARRATION_GAP)
-            spans[scene.id] = next_start - scene_start
+            spans[scene.id] = last_end + NARRATION_GAP - scene_start
         else:
             spans[scene.id] = last_end - scene_start + SCENE_TAIL
         prev_end = last_end

@@ -271,7 +271,11 @@ impl Scene for KindScene {
 }
 
 /// The flat teal colleague character. Drawn in a 200x248 box scaled to `size`.
-fn colleague<'a>(pose: &str, x: f32, y: f32, size: f32, bob: f32) -> Svgr<'a> {
+fn colleague<'a>(pose: &str, x: f32, y: f32, size: f32, bob: f32, light: bool) -> Svgr<'a> {
+    // Dark scenes need a pale body to be visible at all (the original drew a
+    // darkTeal character on darkTeal backgrounds); light scenes keep the
+    // classic darkTeal body with white eyes.
+    let (body, eye) = if light { (PALE_BLUE, DARK_TEAL) } else { (DARK_TEAL, WHITE) };
     let s = size / 248.0;
     let (left, right) = match pose {
         "oops" => ("58,138 50,196", "142,138 150,196"),
@@ -291,11 +295,11 @@ fn colleague<'a>(pose: &str, x: f32, y: f32, size: f32, bob: f32) -> Svgr<'a> {
     let scale_move = format!("translate({x:.2} {y:.2}) scale({s:.5}) translate(0 {bob:.3})");
     fframes::svgr!(
         <g transform={scale_move}>
-            <rect x="54" y="110" width="92" height="132" rx="30" fill={DARK_TEAL} />
-            <circle cx="100" cy="68" r="46" fill={DARK_TEAL} />
-            <polyline points={left} stroke={DARK_TEAL} stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-            <polyline points={right} stroke={DARK_TEAL} stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-            <g fill={WHITE}>
+            <rect x="54" y="110" width="92" height="132" rx="30" fill={body} />
+            <circle cx="100" cy="68" r="46" fill={body} />
+            <polyline points={left} stroke={body} stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+            <polyline points={right} stroke={body} stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+            <g fill={eye}>
                 <circle cx="84" cy="58" r="7" />
                 <circle cx="116" cy="58" r="7" />
             </g>
@@ -326,7 +330,7 @@ impl KindScene {
         let bar_y = top + (lines1 + lines2) * advance + 34.0;
         let bar_w = 560.0 * bar;
         let char_y = 1080.0 - 108.0 - 440.0;
-        let mate = colleague("idle", char_x, char_y, 440.0, bob);
+        let mate = colleague("idle", char_x, char_y, 440.0, bob, false);
         fframes::svgr!(
             <g>
                 <g opacity={l1} transform={Transform::translate(0, rise(frame, &SPRING, 2.0, 110.0))}>{text1}</g>
@@ -405,7 +409,7 @@ impl KindScene {
         let after_text = self.on_screen.get(1).map(String::as_str).unwrap_or("");
         let bt = para(frame, ctx, before_text, 36, REGULAR, DARK_TEAL, 612.0, baseline(panel_y + 160.0, 36), 384.0, 1.3, TextAlign::Center);
         let at = para(frame, ctx, after_text, 40, BOLD, DARK_TEAL, 1130.3, baseline(panel_y + 160.0, 40), 653.0, 1.3, TextAlign::Center);
-        let mate = colleague("oops", 98.0, 280.8 + (1.0 - char_in) * 60.0, 518.4, 0.0);
+        let mate = colleague("oops", 98.0, 280.8 + (1.0 - char_in) * 60.0, 518.4, 0.0, true);
         fframes::svgr!(
             <g>
                 {mate}
@@ -429,8 +433,9 @@ impl KindScene {
         ctx: &FFramesContext<'a, '_>,
         duration_frames: f32,
     ) -> Svgr<'a> {
-        // Grid cells are 806.4x388.8 (alignItems: center), but each card hugs
-        // its text: height = lines * 38 * 1.25, centred vertically in the cell.
+        // Uniform 2x2 cards: every card fills its 806.4x388.8 cell and the
+        // text block is centred vertically inside it, so all four read as
+        // one consistent grid instead of text-hugging pills.
         let cards: Vec<Svgr> = (0..4)
             .map(|i| {
                 let p = spring_in(frame, &SPRING, duration_frames * i as f32 / 5.0);
@@ -439,12 +444,20 @@ impl KindScene {
                 let text = self.on_screen.get(i).map(String::as_str).unwrap_or("");
                 let lines = wrap_count(frame, ctx, text, 38, REGULAR, 707.6) as f32;
                 let content_h = lines * 47.5;
-                let y = cell_y + (388.8 - content_h) / 2.0;
-                let t = para(frame, ctx, text, 38, REGULAR, DARK_TEAL, cell_x + 60.4, baseline(y, 38), 707.6, 1.25, TextAlign::Left);
+                let text_y = cell_y + (388.8 - content_h) / 2.0;
+                let t = para(frame, ctx, text, 38, REGULAR, DARK_TEAL, cell_x + 60.4, baseline(text_y, 38), 707.6, 1.25, TextAlign::Left);
+                let clip = format!("card-clip-{i}");
                 fframes::svgr!(
                     <g opacity={p} transform={Transform::translate(0, rise(frame, &SPRING, duration_frames * i as f32 / 5.0, 60.0))}>
-                        <rect x={cell_x} y={y} width="806.4" height={content_h} rx="36" fill={WHITE} />
-                        <rect x={cell_x} y={y} width="22" height={content_h} fill={LIME} />
+                        <defs>
+                            <clipPath id={clip.clone()}>
+                                <rect x={cell_x} y={cell_y} width="806.4" height="388.8" rx="36" />
+                            </clipPath>
+                        </defs>
+                        <g clip-path={format!("url(#{clip})")}>
+                            <rect x={cell_x} y={cell_y} width="806.4" height="388.8" rx="36" fill={WHITE} />
+                            <rect x={cell_x} y={cell_y} width="22" height="388.8" fill={LIME} />
+                        </g>
                         {t}
                     </g>
                 )
@@ -550,7 +563,7 @@ impl KindScene {
             char_x + char_size * 200.0 / 248.0 / 2.0,
             char_y + char_size * 0.85
         );
-        let mate = colleague("cheer", char_x, char_y, char_size, 0.0);
+        let mate = colleague("cheer", char_x, char_y, char_size, 0.0, true);
         fframes::svgr!(
             <g>
                 <g opacity={card_in} transform={card_transform}>

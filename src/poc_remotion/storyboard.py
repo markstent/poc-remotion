@@ -48,6 +48,10 @@ def _system_prompt() -> str:
         "the scene component renders. The on_screen array must match the "
         "kind's contract exactly in length:\n"
         f"{spec}\n\n"
+        "On_screen entries are viewer-facing copy only. Never begin an entry "
+        "with a structural label such as 'Card:', 'Panel N:', 'Before:' or "
+        "'After:', and never wrap an entry in quotation marks: the scenes "
+        "already render their own labels, badges and headers.\n\n"
         f"Use between {_MIN_SCENES} and {_MAX_SCENES} scenes, and make the "
         "scene seconds sum to duration_seconds."
     )

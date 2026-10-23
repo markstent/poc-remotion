@@ -1,151 +1,105 @@
-# poc-remotion
+# Training Video Builder
 
-Reusable Python and AI proof-of-concept template for building professional, reproducible projects.
+![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-stable-F74C00?logo=rust&logoColor=white)
+![Renderer](https://img.shields.io/badge/renderer-fframes%20%28Rust%29-DEA584)
+![Tests](https://img.shields.io/badge/tests-149%20passing-2EA043)
+![Model](https://img.shields.io/badge/model-GLM%205.3%20Flash-8A2BE2)
+![Gateway](https://img.shields.io/badge/gateway-LiteLLM-FF6F00)
+![LLM spend](https://img.shields.io/badge/LLM%20spend-%2412-009485)
+![Voice overlay](https://img.shields.io/badge/voice%20overlay-ElevenLabs-000000?logo=elevenlabs&logoColor=white)
+![Narration](https://img.shields.io/badge/narration-Kokoro%20ONNX%20%28local%29-1D4757)
 
-## Technology
+An agentic pipeline that turns a short brief into a finished, narrated training video. It drafts every artefact with an LLM, puts a human approval gate between stages, and renders the final cut in Rust. A 4 minute 54 second video renders in about 15 seconds.
 
-- Python 3.13 and uv
-- Rust and fframes (video renderer, see `renderer/README.md`)
-- pytest and Ruff
-- OpenCode
-- LiteLLM gateway
-- 1Password credential management
-- Shared MCP servers and agent skills
+The proof is video 1: "Copilot Prompting for Beginners", an 8-scene, 1080p training video built end to end by this repo, then given an ElevenLabs voice over the top with ffmpeg.
 
-## Getting Started
+## How it works
 
-### 1. Create a new project
+```mermaid
+flowchart LR
+    brief[Brief] --> ingest[Ingest sources]
+    ingest --> discover[Discovery]
+    discover --> claims[Claims check]
+    claims --> script[Script]
+    script --> storyboard[Storyboard]
+    storyboard --> narrate[Narration]
+    narrate --> render[Render]
+    render --> export[Export bundle]
+```
 
-Create an independent GitHub repository using the `markstent/lc-poc-template` template.
+Each stage writes an artefact into `projects/<id>/` and nothing advances until you approve the stage before it:
 
-Clone the new repository into:
+```
+uv run poc-remotion status  --id copilot-prompting-basics
+uv run poc-remotion approve --id copilot-prompting-basics --stage storyboard
+```
 
-    ~/Documents/Projects/<project-name>
+Model calls route through a LiteLLM gateway with per-project virtual keys and budgets. Narration defaults to Kokoro ONNX running locally, so a video costs tokens only where a model is genuinely needed.
 
-Run the bootstrap script once:
+## What we learned about Remotion
 
-    ./scripts/bootstrap.sh <project-name>
+The first version rendered with [Remotion](https://www.remotion.dev): one React component per scene, output through headless Chromium. It worked, and it shipped the approved video 1. We replaced it anyway, and the comparison is the most useful thing in this repo.
 
-The bootstrap configures the Python package, project metadata, dependencies and local project identity.
+A side-by-side port of all 8 scenes to fframes, a Rust crate that draws SVG scenes through Skia and encodes with ffmpeg, produced a frame-accurate match of the approved cut. The same frames took about 9 seconds to render against several minutes through the Remotion pipeline.
 
-Do not run bootstrap again on an existing project.
+What made the difference:
 
-### 2. Configure LiteLLM
+- **The browser was most of the weight.** These scenes are deterministic vector layouts: text, rounded rectangles, a character built from two circles and four lines. React, hooks and a DOM renderer added nothing that plain SVG in Rust could not express, but Node and a browser binary were still required to run it.
+- **Compile-time media beat runtime plumbing.** fframes embeds the storyboard, narration and fonts at compile time, so a render is an incremental `cargo build` with no asset resolution to get wrong on the day.
+- **Porting exposed real defects.** Redrawing each scene from scratch surfaced bugs the approved video carried: a character invisible against dark backgrounds, and news cards that hugged their text instead of filling a uniform grid. One explicit drawing path per scene leaves less room for drift between design and output.
+- **Licensing scales differently.** Remotion is free for individuals and teams of up to three people; larger companies need a paid licence. Worth knowing before a proof of concept becomes a product.
 
-In the LiteLLM dashboard:
+The decision record lives at `docs/superpowers/specs/2026-10-23-fframes-renderer-swap.md`. Remotion is gone from the repo entirely; the renderer is the Rust crate in `renderer/`.
 
-    http://localhost:4000/ui
+## Narration: local first, ElevenLabs for the overlay
 
-Create a project-specific virtual key.
+Kokoro ONNX narrates by default. It runs on the machine, costs nothing per video, and its audio length sets each scene's duration.
 
-Recommended alias:
+For a different voice we had ElevenLabs generate a full-script read with a cloned voice and overlaid it on the finished render with ffmpeg, copying the video stream untouched:
 
-    <project-name>-dev
+```bash
+ffmpeg -i video.mp4 -i alex.mp3 \
+  -map 0:v:0 -map 1:a:0 -c:v copy -c:a aac -b:a 192k -shortest \
+  video-alex-voice.mp4
+```
 
-Configure:
-- Allowed model aliases
-- MCP access group, normally `lab-default`
-- Appropriate project budget
+The ElevenLabs read came out within 70 ms of the Kokoro-paced runtime, so the single track dropped onto the existing scene timings without re-cutting anything. The result is `projects/copilot-prompting-basics/output/video-alex-voice.mp4`. For pipelines that should use ElevenLabs throughout, the clean route is per-scene TTS behind the existing narrate stage, so scene durations derive from the real audio; that needs an API key and a budget approval.
 
-LiteLLM virtual keys control project access and spending.
+## Cost
 
-Upstream provider credentials are configured separately in LiteLLM using reusable named credentials. Do not embed API keys in model deployments.
+About **$12** of LLM tokens built everything in this repo: briefs, discovery, scripts, storyboards, claims checks and revisions, all GLM 5.3 Flash through LiteLLM. Narration and rendering run locally, so beyond tokens each video costs nothing to produce.
 
-### 3. Configure 1Password
+## Getting started
 
-Store the project virtual key in a 1Password API Credential item.
+Prerequisites: Python 3.13 with uv, a Rust toolchain, ffmpeg, and two gitignored locals: the brand fonts in `src/fonts/` and the Kokoro models at the repo root. A fresh clone needs both before it can render.
 
-Recommended item name:
+```bash
+uv sync
+uv run pytest            # 149 tests
+uv run ruff check .
+```
 
-    <project-name>-LiteLLM-dev
+Building a video walks the stages in the diagram above. Every stage is a subcommand with `--help`, and `status` shows which approvals a project is waiting on. To see a finished one:
 
-Store the key in the `credential` field.
+```bash
+uv run poc-remotion render --id copilot-prompting-basics
+uv run poc-remotion export --id copilot-prompting-basics
+```
 
-The local `.ai-project` file contains only the item reference:
+Exports land in `projects/<id>/output/bundle/` with the video, SRT subtitles, storyboard, script, claims and provenance.
 
-    LITELLM_ITEM=<project-name>-LiteLLM-dev
+## Repository layout
 
-Never store the actual API key in `.ai-project` or Git.
+- `src/poc_remotion/`: the pipeline: drafting, gating, TTS, the render bridge and export
+- `renderer/`: the fframes Rust crate; project data is staged into it per render and cleaned after
+- `projects/`: one directory per video, gitignored because it holds generated media
+- `docs/`: the PRD, the design spec and decision records
+- `tests/`: 149 pytest tests, including the gated render bridge
+- `AGENTS.md`: how coding agents are meant to work in this repo
 
-### 4. Configure OpenCode
+## Notes
 
-The global OpenCode configuration is:
-
-    ~/.config/opencode/opencode.jsonc
-
-It contains shared LiteLLM provider settings, model aliases and the MCP gateway connection.
-
-Project-level `opencode.jsonc` may specify a default model:
-
-    {
-      "$schema": "https://opencode.ai/config.json",
-      "model": "litellm/<public-model-alias>"
-    }
-
-The public model alias must match the corresponding LiteLLM deployment.
-
-The global model catalogue determines which models OpenCode can select. The project virtual key determines which models LiteLLM permits.
-
-### 5. Start OpenCode
-
-From the project directory:
-
-    oc
-
-The `oc` launcher:
-1. Reads the project's `.ai-project`.
-2. Retrieves the corresponding virtual key from 1Password.
-3. Supplies it as `LITELLM_API_KEY`.
-4. Starts OpenCode.
-
-Inside OpenCode:
-- `/models` selects a model.
-- `/mcp` checks the shared LiteLLM MCP connection.
-
-A single LiteLLM MCP connection can expose multiple authorised downstream tools.
-
-## Development
-
-Install dependencies:
-
-    uv sync
-
-Run tests:
-
-    uv run pytest
-
-Run linting:
-
-    uv run ruff check .
-
-Check formatting:
-
-    uv run ruff format --check .
-
-Start the coding agent:
-
-    oc
-
-## Project Structure
-
-- `src/` - application code (the Training Video Builder pipeline)
-- `renderer/` - fframes video renderer (Rust); staged data and audio are gitignored
-- `tests/` - automated tests
-- `docs/` - specifications and decisions
-- `experiments/` - exploratory work
-- `data/` - local datasets
-- `scripts/` - project utilities
-- `AGENTS.md` - coding agent instructions
-- `.ai-project` - local 1Password item reference, ignored by Git
-- `opencode.jsonc` - optional project-specific OpenCode settings
-
-## Security
-
-- Never commit secrets, API keys or sensitive data.
-- Store credentials in 1Password.
-- Use project-specific LiteLLM virtual keys.
-- Keep upstream provider credentials inside LiteLLM.
-- Respect model permissions, MCP access groups and budgets.
-- Review changes before committing or pushing.
-
-For complete procedures, refer to the Latent Space Experimentation Lab AI Project Setup Instructions.
+- The brand font (PP Pangram Sans) has an unconfirmed licence and stays out of Git.
+- Videos, narration audio and model files are gitignored; nothing generated is committed.
+- Workstation setup (OpenCode, 1Password, LiteLLM keys) follows the lab instructions referenced in `AGENTS.md`.

@@ -267,7 +267,7 @@ uv run poc-remotion approve --id copilot-prompting-basics --stage duration
 
 - [ ] **Step 5: Narrate and export**: `narrate` then check the reported total is inside 4:30-6:00 (design success criterion); `export-srt`; `export` (default scale 1.0, 1080p). Open the bundle video for the user.
 
-- [ ] **Step 6: Success criteria checklist** (design section 10): character present, no orbs; narration is the user-approved `bf_emma`; total duration in window; every claim in `claims.json` maps to the source document (`status == "supported"`); both gates were recorded before render; one `revise` cycle completed without losing other approved state; captions burned in and SRT exported; storyboard and script were drafted by the pipeline's model steps. Record each criterion pass/fail in the session ledger; failures are defects to fix before declaring MVP 1 done.
+- [ ] **Step 6: Success criteria checklist** (design section 10): character present, no orbs; narration is the user-approved `bf_emma`; total duration in window; every claim in `claims.json` maps to the source document (`status == "supported"`); both gates were recorded before render; one `revise` cycle completed without losing other approved state; captions burned in and SRT exported; storyboard and script were drafted by the pipeline's model steps; a `draft-script`-produced project renders visible on-screen text (whole-branch B review carry-forward: the on_screen contract end to end). Record each criterion pass/fail in the session ledger; failures are defects to fix before declaring MVP 1 done.
 
 - [ ] **Step 7: Commit** any plan-relevant fixes discovered during production as separate commits; the project directory itself is never committed.
 

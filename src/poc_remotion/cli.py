@@ -6,6 +6,7 @@ from pathlib import Path
 
 from poc_remotion.brand import load_brand, validate_brand
 from poc_remotion.project import Project, ProjectError
+from poc_remotion.render import GateError, RenderOptions, render_video
 
 
 def _print_error(msg: str) -> None:
@@ -53,6 +54,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     validate_parser = subparsers.add_parser("validate", help="Validate project integrity")
     validate_parser.add_argument("--id", required=True, help="Project identifier")
     validate_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    render_parser = subparsers.add_parser(
+        "render", help="Render the project video through Remotion"
+    )
+    render_parser.add_argument("--id", required=True, help="Project identifier")
+    render_parser.add_argument(
+        "--scale", type=float, default=1.0, help="Render scale factor"
+    )
+    render_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -153,6 +165,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 2
 
 
+def cmd_render(args: argparse.Namespace) -> int:
+    """Handle render subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        out = render_video(project, RenderOptions(scale=args.scale))
+        print(out)
+        return 0
+    except (GateError, ProjectError, RuntimeError) as exc:
+        _print_error(str(exc))
+        return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI. Returns exit codes: 0 success, 2 on error."""
     try:
@@ -169,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_approve(args)
     if args.command == "validate":
         return cmd_validate(args)
+    if args.command == "render":
+        return cmd_render(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

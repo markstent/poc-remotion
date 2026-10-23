@@ -94,6 +94,14 @@ class Brief(BaseModel):
     qa: list[DiscoveryAnswer] = Field(default_factory=list)
 
 
+class BriefCore(BaseModel):
+    audience: str
+    objectives: list[str]
+    tone: str
+    duration_minutes: float | None
+    notes: str
+
+
 class ProjectManifest(BaseModel):
     id: str
     created_at: str
@@ -123,6 +131,7 @@ def generate_json_schemas(out_dir: Path) -> list[Path]:
         (ScriptLine, "ScriptLine"),
         (ApprovalState, "ApprovalState"),
         (Brief, "Brief"),
+        (BriefCore, "BriefCore"),
         (DiscoveryAnswer, "DiscoveryAnswer"),
         (DiscoveryQuestions, "DiscoveryQuestions"),
         (ProjectManifest, "ProjectManifest"),

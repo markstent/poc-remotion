@@ -2,7 +2,7 @@
 
 from poc_remotion.llm import LLMClient
 from poc_remotion.project import Project
-from poc_remotion.schemas import DiscoveryAnswer, DiscoveryQuestions
+from poc_remotion.schemas import Brief, BriefCore, DiscoveryAnswer, DiscoveryQuestions
 
 
 class DraftError(Exception):
@@ -59,3 +59,39 @@ def run_discovery(project: Project, client: LLMClient) -> list[str]:
             known.add(question)
     project.save_brief(brief)
     return [qa.question for qa in brief.qa]
+
+
+_CAPTURE_MARKER = "Answers to incorporate:"
+
+
+def capture_brief(project: Project, client: LLMClient, qa: list[DiscoveryAnswer]) -> Brief:
+    """Derive a brief from answered discovery questions and save it.
+
+    Every answer must be non-empty after stripping whitespace, otherwise
+    DraftError is raised naming the unanswered question and brief.json is
+    left untouched. One chat_json call derives the BriefCore fields from the
+    question-answer pairs; they replace any existing audience, objectives,
+    tone, duration and notes, and the qa set is replaced by the new answers.
+    """
+    for answer in qa:
+        if not answer.answer.strip():
+            raise DraftError(f"unanswered question: {answer.question}")
+
+    qa_text = "\n\n".join(f"Q: {a.question}\nA: {a.answer}" for a in qa)
+    system = (
+        "You capture a training video brief. Given answered discovery "
+        "questions, derive the audience, the objectives, the tone, the "
+        "duration in minutes and any notes."
+    )
+    user = (
+        f"{_CAPTURE_MARKER}\n{qa_text}\n\n"
+        "Derive the brief from these answers. "
+        "Answer with JSON of the form "
+        '{"audience": "...", "objectives": ["..."], "tone": "...", '
+        '"duration_minutes": 5, "notes": "..."}.'
+    )
+
+    core = client.chat_json(system, user, BriefCore)
+    brief = Brief(**core.model_dump(), qa=qa)
+    project.save_brief(brief)
+    return brief

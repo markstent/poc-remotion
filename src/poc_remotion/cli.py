@@ -1,15 +1,17 @@
 """Command-line interface for poc-remotion."""
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from poc_remotion.brand import load_brand, validate_brand
-from poc_remotion.discovery import DraftError, run_discovery
+from poc_remotion.discovery import DraftError, capture_brief, run_discovery
 from poc_remotion.ingest import ingest_markdown
 from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
+from poc_remotion.schemas import DiscoveryAnswer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -92,6 +94,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     discover_parser.add_argument("--id", required=True, help="Project identifier")
     discover_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    brief_parser = subparsers.add_parser(
+        "brief", help="Capture the brief from answered discovery questions"
+    )
+    brief_parser.add_argument("--id", required=True, help="Project identifier")
+    brief_parser.add_argument(
+        "--qa-file",
+        required=True,
+        help="JSON file of answered questions: [{\"question\": ..., \"answer\": ...}, ...]",
+    )
+    brief_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -244,6 +259,56 @@ def cmd_discover(args: argparse.Namespace) -> int:
         return 2
 
 
+def _load_qa_file(path: Path) -> list[DiscoveryAnswer]:
+    """Load answered discovery questions from a JSON file.
+
+    Raises ValueError (covering JSONDecodeError and pydantic validation) or
+    TypeError for non-array documents, matching the CLI's error handlers.
+    """
+    raw = json.loads(path.read_text())
+    if not isinstance(raw, list):
+        raise TypeError(f"qa file must contain a JSON array, got {type(raw).__name__}")
+    qa: list[DiscoveryAnswer] = []
+    for i, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise TypeError(f"qa file entry {i} is not an object")
+        if "question" not in item or "answer" not in item:
+            raise ValueError(f"qa file entry {i} is missing 'question' or 'answer'")
+        qa.append(DiscoveryAnswer(question=item["question"], answer=item["answer"]))
+    return qa
+
+
+def cmd_brief(args: argparse.Namespace) -> int:
+    """Handle brief subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        qa = _load_qa_file(Path(args.qa_file))
+        project = Project.load(project_path)
+        brief = capture_brief(project, LLMClient(), qa)
+    except (DraftError, ProjectError, LLMError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers malformed qa-file JSON (JSONDecodeError), non-object
+        # entries (TypeError), unreadable files (OSError) and non-string
+        # question or answer values (pydantic ValidationError, a ValueError).
+        _print_error(f"brief error: {exc}")
+        return 2
+
+    duration = (
+        "unspecified"
+        if brief.duration_minutes is None
+        else f"{brief.duration_minutes:g} minutes"
+    )
+    print(f"audience: {brief.audience}")
+    print(f"tone: {brief.tone}")
+    print(f"duration target: {duration}")
+    return 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -287,6 +352,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ingest(args)
     if args.command == "discover":
         return cmd_discover(args)
+    if args.command == "brief":
+        return cmd_brief(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

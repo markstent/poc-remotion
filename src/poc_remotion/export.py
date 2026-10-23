@@ -6,7 +6,7 @@ from pathlib import Path
 
 from poc_remotion.brand import load_brand
 from poc_remotion.project import Project
-from poc_remotion.render import RenderOptions, render_video
+from poc_remotion.render import render_video
 from poc_remotion.schemas import SourceRef
 from poc_remotion.subtitles import srt_from_script
 from poc_remotion.tts import load_tts_config
@@ -48,7 +48,7 @@ def _copy_repo_files(bundle: Path, brand_path: Path, tts_path: Path) -> None:
     shutil.copy2(tts_path, bundle / "tts.json")
 
 
-def run_export(project: Project, scale: float = 1.0) -> Path:
+def run_export(project: Project) -> Path:
     """Render the project video and assemble the export bundle.
 
     The bundle is ``output/bundle/`` inside the project and holds the
@@ -98,7 +98,7 @@ def run_export(project: Project, scale: float = 1.0) -> Path:
     load_brand(brand_path)
     load_tts_config(tts_path)
 
-    video = render_video(project, RenderOptions(scale=scale))
+    video = render_video(project)
 
     srt, _skipped = srt_from_script(script)
     subtitles_dir = project.dir / "subtitles"

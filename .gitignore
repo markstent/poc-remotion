@@ -39,7 +39,15 @@ node_modules/
 
 # Licensed font binaries: licence unconfirmed, keep out of Git
 src/fonts/
-remotion-starter/out/
+
+# Renderer staging (per-project data + audio, embedded at build time) and
+# build artefacts. Fonts are copied in from src/fonts by the render step.
+renderer/data/*.json
+renderer/media/*
+!renderer/media/.gitkeep
+renderer/target/
+renderer/out.mp4
+renderer/frames/
 projects/
 kokoro-v1.0.onnx
 voices-v1.0.bin

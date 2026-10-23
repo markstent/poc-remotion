@@ -1,4 +1,4 @@
-"""Tests for the gated render bridge."""
+"""Tests for the gated render bridge (fframes renderer)."""
 
 import json
 import subprocess
@@ -9,7 +9,7 @@ import pytest
 from poc_remotion import render as render_module
 from poc_remotion.cli import main
 from poc_remotion.project import Project
-from poc_remotion.render import GateError, RenderOptions, render_video
+from poc_remotion.render import GateError, render_video
 from poc_remotion.schemas import ScriptDoc, ScriptLine, Storyboard, StoryboardScene
 
 
@@ -27,7 +27,7 @@ def _write_wav(path: Path, seconds: float = 0.1) -> None:
 
 
 def _narration_doc(*files: str) -> dict:
-    """Build a plain narration.json document from public-relative file paths."""
+    """Build a plain narration.json document from project-relative file paths."""
     lines = [
         {
             "scene_id": "s1",
@@ -67,45 +67,51 @@ def test_render_blocked_without_gates(tmp_path):
     assert "storyboard" in str(e.value)
 
 
-def test_render_builds_expected_command(tmp_path, monkeypatch):
+def test_render_builds_expected_command(tmp_path, renderer, fake_render):
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
-    seen = {}
-
-    def _ok():
-        (p.dir / "output" / "video.mp4").touch()
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(render_module, "subprocess_run", lambda cmd, **kw: seen.update(cmd=cmd) or _ok())
-    out = render_video(p, RenderOptions(scale=0.25))
-    cmd = seen["cmd"]
-    assert cmd[:3] == ["npx", "remotion", "render"] and "TrainerVideo" in cmd
-    assert any(a.startswith("--scale=0.25") for a in cmd)
+    fake_render()
+    out = render_video(p)
     assert out == p.dir / "output" / "video.mp4"
+    assert (p.dir / "output" / "video.mp4").exists()
 
 
-def test_render_writes_props_from_project_docs(tmp_path, monkeypatch):
-    """The props file passed to Remotion mirrors the saved storyboard and script."""
+def test_render_runs_cargo_in_renderer_dir(tmp_path, renderer, monkeypatch):
+    """The renderer subprocess is cargo, run inside the redirected renderer root."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
     seen = {}
 
-    def _ok():
-        (p.dir / "output" / "video.mp4").touch()
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    def _run(cmd, **kw):
+        seen.update(cmd=cmd, kw=kw)
+        (renderer / "out.mp4").write_bytes(b"fake mp4")
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(render_module, "subprocess_run", lambda cmd, **kw: seen.update(cmd=cmd) or _ok())
+    monkeypatch.setattr(render_module, "subprocess_run", _run)
+    render_video(p)
+    assert seen["cmd"] == ["cargo", "run", "--release", "--quiet", "--", "render"]
+    assert seen["kw"]["cwd"] == renderer
+
+
+def test_render_stages_storyboard_and_narration(tmp_path, renderer, fake_render):
+    """The staged data files mirror the saved storyboard and narration."""
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    narration = _narration_doc()
+    (p.dir / "narration.json").write_text(json.dumps(narration))
+    captured = fake_render()
     render_video(p)
 
-    props = json.loads((p.dir / "output" / "props.json").read_text())
-    assert props["storyboard"] == p.load_storyboard().model_dump()
-    assert props["script"] == p.load_script().model_dump()
-    assert any(a.startswith(f"--props={p.dir / 'output' / 'props.json'}") for a in seen["cmd"])
+    staged = captured["staged_data"]
+    assert staged["storyboard.json"] == p.load_storyboard().model_dump()
+    assert staged["narration.json"] == narration
+    # Staged data is per-project: it is cleaned up after the render.
+    assert list((renderer / "data").glob("*.json")) == []
+    assert not (renderer / "out.mp4").exists(), "out.mp4 must be moved into the project"
 
 
-def test_render_failure_raises_runtime_error_with_stderr_tail(tmp_path, monkeypatch):
+def test_render_failure_raises_runtime_error_with_stderr_tail(tmp_path, renderer, monkeypatch):
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
 
     def _fail(cmd, **kw):
-        return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="npx: boom")
+        return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="cargo: boom")
 
     monkeypatch.setattr(render_module, "subprocess_run", _fail)
     with pytest.raises(RuntimeError) as e:
@@ -113,14 +119,21 @@ def test_render_failure_raises_runtime_error_with_stderr_tail(tmp_path, monkeypa
     assert "boom" in str(e.value)
 
 
-def test_cli_render_prints_output_path(tmp_path, monkeypatch, capsys):
+def test_render_missing_output_raises(tmp_path, renderer, monkeypatch):
+    """A zero-exit render that produces no out.mp4 is an error, not a success."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
 
-    def _ok():
-        (p.dir / "output" / "video.mp4").touch()
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+    def _empty(cmd, **kw):
+        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(render_module, "subprocess_run", lambda cmd, **kw: _ok())
+    monkeypatch.setattr(render_module, "subprocess_run", _empty)
+    with pytest.raises(RuntimeError, match="no output"):
+        render_video(p)
+
+
+def test_cli_render_prints_output_path(tmp_path, renderer, fake_render, capsys):
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    fake_render()
     rc = main(["render", "--id", "demo", "--projects-root", str(tmp_path)])
     assert rc == 0
     assert str(p.dir / "output" / "video.mp4") in capsys.readouterr().out
@@ -133,8 +146,8 @@ def test_cli_render_blocked_exits_two(tmp_path, capsys):
     assert "storyboard" in capsys.readouterr().err
 
 
-def test_render_copies_audio_to_public(tmp_path, monkeypatch):
-    """Narration audio is staged into public/audio for npx, then removed."""
+def test_render_stages_audio_and_fonts(tmp_path, renderer, monkeypatch):
+    """Narration audio and brand fonts are staged into media/ before cargo runs."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
     audio_dir = p.dir / "audio"
     _write_wav(audio_dir / "a.wav")
@@ -142,81 +155,65 @@ def test_render_copies_audio_to_public(tmp_path, monkeypatch):
     (p.dir / "narration.json").write_text(
         json.dumps(_narration_doc("audio/a.wav", "audio/b.wav"))
     )
-    public_audio = tmp_path / "public" / "audio"
-    monkeypatch.setattr(render_module, "PUBLIC_AUDIO_DIR", public_audio)
+    media = renderer / "media"
 
-    def _ok(cmd, **kw):
-        assert (public_audio / "a.wav").exists(), "a.wav not staged before npx"
-        assert (public_audio / "b.wav").exists(), "b.wav not staged before npx"
-        (p.dir / "output" / "video.mp4").touch()
+    def _run(cmd, **kw):
+        staged = sorted(f.name for f in media.iterdir())
+        for font in render_module.FONT_FILES:
+            assert font in staged, f"{font} not staged before cargo"
+        assert "a.wav" in staged and "b.wav" in staged
+        (renderer / "out.mp4").write_bytes(b"fake mp4")
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(render_module, "subprocess_run", _ok)
+    monkeypatch.setattr(render_module, "subprocess_run", _run)
     render_video(p)
 
-    assert not (public_audio / "a.wav").exists(), "staged a.wav not cleaned up"
-    assert not (public_audio / "b.wav").exists(), "staged b.wav not cleaned up"
-    # The staged directory itself is created and left empty.
-    assert public_audio.is_dir() and not any(public_audio.iterdir())
+    staged_after = sorted(f.name for f in media.iterdir())
+    # Audio is per-project and cleaned up; fonts are stable and stay staged.
+    assert "a.wav" not in staged_after and "b.wav" not in staged_after
+    for font in render_module.FONT_FILES:
+        assert font in staged_after
     # The project's own audio files remain untouched.
     assert (audio_dir / "a.wav").exists() and (audio_dir / "b.wav").exists()
-    props = json.loads((p.dir / "output" / "props.json").read_text())
-    assert props["narration"]["lines"][1]["file"] == "audio/b.wav"
 
 
-def test_render_without_audio_touches_nothing(tmp_path, monkeypatch):
-    """A project without narration leaves public/audio exactly as it was."""
+def test_render_without_narration_stages_fonts_only(tmp_path, renderer, fake_render):
+    """A project without narration stages fonts and no audio."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
-    public_audio = render_module.REMOTION_DIR / "public" / "audio"
-    existed_before = public_audio.exists()
-    before = sorted(f.name for f in public_audio.iterdir()) if existed_before else None
-
-    def _ok(cmd, **kw):
-        (p.dir / "output" / "video.mp4").touch()
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(render_module, "subprocess_run", _ok)
+    fake_render()
     render_video(p)
 
-    if existed_before:
-        assert sorted(f.name for f in public_audio.iterdir()) == before
-    else:
-        assert not public_audio.exists()
+    staged = sorted(f.name for f in (renderer / "media").iterdir())
+    assert staged == sorted(render_module.FONT_FILES)
+    assert not (renderer / "data" / "narration.json").exists()
 
 
-def test_render_empty_narration_lines_touches_nothing(tmp_path, monkeypatch):
-    """narration.json with an empty lines list stages nothing and adds the prop."""
+def test_render_empty_narration_lines_stages_no_audio(tmp_path, renderer, fake_render):
+    """narration.json with an empty lines list stages nothing but is still passed on."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
     (p.dir / "narration.json").write_text(json.dumps({"lines": []}))
-    public_audio = tmp_path / "public" / "audio"
-    monkeypatch.setattr(render_module, "PUBLIC_AUDIO_DIR", public_audio)
-
-    def _ok(cmd, **kw):
-        (p.dir / "output" / "video.mp4").touch()
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(render_module, "subprocess_run", _ok)
+    captured = fake_render()
     render_video(p)
 
-    assert list(public_audio.iterdir()) == []
-    props = json.loads((p.dir / "output" / "props.json").read_text())
-    assert props["narration"] == {"lines": []}
+    staged = [f.name for f in (renderer / "media").iterdir() if f.suffix == ".wav"]
+    assert staged == []
+    assert captured["staged_data"]["narration.json"] == {"lines": []}
 
 
-def test_render_malformed_narration_fails_cleanly(tmp_path, monkeypatch):
-    """Unparseable narration.json raises RuntimeError naming the file; npx skipped."""
+def test_render_malformed_narration_fails_cleanly(tmp_path, renderer, monkeypatch):
+    """Unparseable narration.json raises RuntimeError naming the file; cargo skipped."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
     (p.dir / "narration.json").write_text("{not json")
 
     def _fail(cmd, **kw):
-        raise AssertionError("npx must not be invoked for malformed narration.json")
+        raise AssertionError("cargo must not be invoked for malformed narration.json")
 
     monkeypatch.setattr(render_module, "subprocess_run", _fail)
     with pytest.raises(RuntimeError, match="narration.json"):
         render_video(p)
 
 
-def test_render_invalid_narration_line_fails_cleanly(tmp_path, monkeypatch):
+def test_render_invalid_narration_line_fails_cleanly(tmp_path, renderer, monkeypatch):
     """A narration line missing 'file' fails schema validation naming narration.json."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
     (p.dir / "narration.json").write_text(
@@ -235,22 +232,48 @@ def test_render_invalid_narration_line_fails_cleanly(tmp_path, monkeypatch):
     )
 
     def _fail(cmd, **kw):
-        raise AssertionError("npx must not be invoked for invalid narration.json")
+        raise AssertionError("cargo must not be invoked for invalid narration.json")
 
     monkeypatch.setattr(render_module, "subprocess_run", _fail)
     with pytest.raises(RuntimeError, match="narration.json"):
         render_video(p)
 
 
-def test_render_missing_narration_audio_fails(tmp_path, monkeypatch):
-    """A narration line referencing a missing file aborts before npx runs."""
+def test_render_missing_narration_audio_fails(tmp_path, renderer, monkeypatch):
+    """A narration line referencing a missing file aborts before cargo runs."""
     p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
     (p.dir / "narration.json").write_text(json.dumps(_narration_doc("audio/absent.wav")))
 
     def _boom(cmd, **kw):
-        raise AssertionError("npx must not be invoked when narration audio is missing")
+        raise AssertionError("cargo must not be invoked when narration audio is missing")
 
     monkeypatch.setattr(render_module, "subprocess_run", _boom)
     with pytest.raises(RuntimeError) as e:
         render_video(p)
     assert "absent.wav" in str(e.value)
+
+
+def test_render_rejects_non_audio_relative_path(tmp_path, renderer, monkeypatch):
+    """Narration file paths must be audio/<name>; anything else aborts early."""
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    (p.dir / "narration.json").write_text(json.dumps(_narration_doc("somewhere/b.wav")))
+
+    def _boom(cmd, **kw):
+        raise AssertionError("cargo must not be invoked for a non-audio/ file path")
+
+    monkeypatch.setattr(render_module, "subprocess_run", _boom)
+    with pytest.raises(RuntimeError, match="audio/<name>"):
+        render_video(p)
+
+
+def test_render_missing_fonts_fails(tmp_path, renderer, monkeypatch):
+    """A missing brand-font source aborts before cargo runs."""
+    p = _approved_project(tmp_path, stages=["storyboard", "duration", "script"])
+    monkeypatch.setattr(render_module, "FONTS_SOURCE_DIR", tmp_path / "absent-fonts")
+
+    def _boom(cmd, **kw):
+        raise AssertionError("cargo must not be invoked when brand fonts are missing")
+
+    monkeypatch.setattr(render_module, "subprocess_run", _boom)
+    with pytest.raises(RuntimeError, match="font"):
+        render_video(p)

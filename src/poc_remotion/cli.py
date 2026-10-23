@@ -13,7 +13,7 @@ from poc_remotion.ingest import ingest_markdown
 from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.narrate import NarrateError, run_narrate
 from poc_remotion.project import Project, ProjectError
-from poc_remotion.render import GateError, RenderOptions, render_video
+from poc_remotion.render import GateError, render_video
 from poc_remotion.revise import ReviseError, run_revise
 from poc_remotion.schemas import DiscoveryAnswer
 from poc_remotion.script_draft import run_script
@@ -73,12 +73,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     render_parser = subparsers.add_parser(
-        "render", help="Render the project video through Remotion"
+        "render", help="Render the project video with the fframes renderer"
     )
     render_parser.add_argument("--id", required=True, help="Project identifier")
-    render_parser.add_argument(
-        "--scale", type=float, default=1.0, help="Render scale factor"
-    )
     render_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
@@ -174,9 +171,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "export", help="Render the video and assemble the export bundle"
     )
     export_parser.add_argument("--id", required=True, help="Project identifier")
-    export_parser.add_argument(
-        "--scale", type=float, default=1.0, help="Render scale factor"
-    )
     export_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
@@ -600,7 +594,7 @@ def cmd_render(args: argparse.Namespace) -> int:
 
     try:
         project = Project.load(project_path)
-        out = render_video(project, RenderOptions(scale=args.scale))
+        out = render_video(project)
         print(out)
         return 0
     except (GateError, ProjectError, RuntimeError) as exc:
@@ -616,7 +610,7 @@ def cmd_export(args: argparse.Namespace) -> int:
 
     try:
         project = Project.load(project_path)
-        bundle = run_export(project, scale=args.scale)
+        bundle = run_export(project)
     except (ExportError, ProjectError, RuntimeError, GateError, TTSConfigError) as exc:
         _print_error(str(exc))
         return 2

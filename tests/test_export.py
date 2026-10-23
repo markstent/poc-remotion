@@ -1,6 +1,5 @@
 """Tests for the export bundle."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -67,38 +66,30 @@ def _full_project(tmp_path: Path) -> Project:
     return p
 
 
-def _fake_render(monkeypatch: pytest.MonkeyPatch, project: Project) -> list[list[str]]:
-    """Replace npx with a stub that leaves a video.mp4 in place and captures commands."""
-    captured: list[list[str]] = []
-
-    def _ok(cmd, **kw):
-        captured.append(cmd)
-        (project.dir / "output" / "video.mp4").touch()
-        return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(render_module, "subprocess_run", _ok)
-    return captured
+def _fake_render(fake_render) -> dict:
+    """Install a fake cargo run and return its capture dict."""
+    return fake_render()
 
 
 def _boom_render(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace npx with a stub that fails the test if it is ever invoked."""
+    """Replace cargo with a stub that fails the test if it is ever invoked."""
 
     def _boom(cmd, **kw):
-        raise AssertionError("npx must not be invoked")
+        raise AssertionError("cargo must not be invoked")
 
     monkeypatch.setattr(render_module, "subprocess_run", _boom)
 
 
-def test_export_bundle_complete(tmp_path, monkeypatch, capsys):
+def test_export_bundle_complete(tmp_path, fake_render, capsys):
     """A gated, timed project exports a bundle with exactly the nine files."""
     p = _full_project(tmp_path)
-    captured = _fake_render(monkeypatch, p)
+    captured = _fake_render(fake_render)
 
-    bundle = run_export(p, scale=2.0)
+    bundle = run_export(p)
 
     assert bundle == p.dir / "output" / "bundle"
     assert sorted(f.name for f in bundle.iterdir()) == BUNDLE_FILES
-    assert any(a == "--scale=2.0" for a in captured[0])
+    assert captured["cmd"] == ["cargo", "run", "--release", "--quiet", "--", "render"]
     srt, skipped = srt_from_script(p.load_script())
     assert skipped == 0
     assert (bundle / "demo.srt").read_text() == srt

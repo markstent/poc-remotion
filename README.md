@@ -5,6 +5,7 @@ Reusable Python and AI proof-of-concept template for building professional, repr
 ## Technology
 
 - Python 3.13 and uv
+- Rust and fframes (video renderer, see `renderer/README.md`)
 - pytest and Ruff
 - OpenCode
 - LiteLLM gateway
@@ -127,7 +128,8 @@ Start the coding agent:
 
 ## Project Structure
 
-- `src/` - application code
+- `src/` - application code (the Training Video Builder pipeline)
+- `renderer/` - fframes video renderer (Rust); staged data and audio are gitignored
 - `tests/` - automated tests
 - `docs/` - specifications and decisions
 - `experiments/` - exploratory work

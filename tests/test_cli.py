@@ -48,7 +48,7 @@ def test_status_missing_project_exits_two(tmp_path):
     assert main(["status", "--id", "ghost", "--projects-root", str(tmp_path)]) == 2
 
 
-def test_projects_root_relative_path(tmp_path, monkeypatch, capsys):
+def test_projects_root_relative_path(tmp_path, monkeypatch):
     inner = tmp_path / "inner"
     inner.mkdir()
     monkeypatch.chdir(inner)

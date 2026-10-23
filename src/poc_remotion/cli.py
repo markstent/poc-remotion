@@ -4,8 +4,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from pydantic import ValidationError
-
 from poc_remotion.project import Project, ProjectError
 
 
@@ -132,22 +130,15 @@ def cmd_validate(args: argparse.Namespace) -> int:
             project.load_storyboard()
         if (project_path / "script.json").exists():
             project.load_script()
+        if (project_path / "sources.json").exists():
+            project.load_sources()
         print("ok")
         return 0
     except ProjectError as exc:
         _print_error(str(exc))
         return 2
-    except ValidationError as exc:
+    except ValueError as exc:
         _print_error(f"validation error: {exc}")
-        return 2
-
-    try:
-        project = Project.load(project_path)
-        project.manifest()
-        print("ok")
-        return 0
-    except ProjectError as exc:
-        _print_error(str(exc))
         return 2
 
 

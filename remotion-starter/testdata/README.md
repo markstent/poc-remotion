@@ -1,0 +1,3 @@
+# Test data
+
+`props.json` is generated from `fixture-storyboard.json` and `fixture-script.json` and exists only for manual CLI runs such as `npx remotion still TrainerVideo out/test/frame0.png --props=testdata/props.json`; regenerate it from the `remotion-starter` directory with `jq -s '{ storyboard: .[0], script: .[1] }' testdata/fixture-storyboard.json testdata/fixture-script.json > testdata/props.json`. `narration.json` is a static fixture mirroring the narration document the Python pipeline writes into a project directory; its `file` paths are relative to `public/` and only resolve during renders that stage real audio there.

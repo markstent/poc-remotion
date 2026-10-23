@@ -28,3 +28,12 @@ export interface ScriptDoc {
   lines: ScriptLine[];
   on_screen: Record<string, string[]>;
 }
+
+/** One narration audio line; file is public-relative, e.g. audio/<hash>.wav. */
+export interface NarrationLine {
+  scene_id: string;
+  text: string;
+  start_seconds: number;
+  end_seconds: number;
+  file: string;
+}

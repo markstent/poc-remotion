@@ -1,11 +1,19 @@
 import type { JSX } from "react";
 import {
+  Audio,
   Sequence,
+  staticFile,
   useCurrentFrame,
   useVideoConfig,
   type CalculateMetadataFunction
 } from "remotion";
-import type { ScriptDoc, ScriptLine, Storyboard, StoryboardScene } from "./lib/types";
+import type {
+  NarrationLine,
+  ScriptDoc,
+  ScriptLine,
+  Storyboard,
+  StoryboardScene
+} from "./lib/types";
 import { SCENES } from "./scenes";
 import fixtureScript from "../testdata/fixture-script.json";
 import fixtureStoryboard from "../testdata/fixture-storyboard.json";
@@ -18,6 +26,8 @@ import fixtureStoryboard from "../testdata/fixture-storyboard.json";
 export type TrainerVideoProps = {
   storyboard: Storyboard;
   script: ScriptDoc;
+  /** Narration audio lines; absent when the project has no narration. */
+  narration?: { lines: NarrationLine[] };
   /** Caption pill panel colour; default is translucent darkTeal. */
   captionBackground?: string;
   /** Caption cue bar colour; default is lime. */
@@ -120,6 +130,7 @@ export function activeCaptionLine(
 export function TrainerVideo({
   storyboard,
   script,
+  narration,
   captionBackground = "rgba(29, 71, 87, 0.85)",
   cueColor = "#C4F600",
   captionColor = "#FFFFFF"
@@ -149,6 +160,14 @@ export function TrainerVideo({
           </Sequence>
         );
       })}
+      {narration?.lines.map((line) => (
+        <Sequence
+          key={`${line.file}-${line.start_seconds}`}
+          from={Math.round(line.start_seconds * fps)}
+        >
+          <Audio src={staticFile(line.file)} />
+        </Sequence>
+      ))}
       {caption === null ? null : (
         <div
           style={{

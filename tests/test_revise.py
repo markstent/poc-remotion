@@ -250,9 +250,11 @@ def test_revise_unknown_scene_exits_two(
 
 
 def test_revise_on_screen_length_enforced(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A wrong on_screen length raises ReviseError; the storyboard is untouched."""
+    """A wrong on_screen length raises ReviseError; nothing on disk changes."""
     project, _tts = _seed(tmp_path, monkeypatch)
     sb_bytes = (project.dir / "storyboard.json").read_bytes()
+    script_bytes = (project.dir / "script.json").read_bytes()
+    narration_bytes = (project.dir / "narration.json").read_bytes()
     client = FakeClient({**_GOOD_REPLY, "on_screen": ["only one"]})
 
     with pytest.raises(ReviseError, match="opening") as exc_info:
@@ -261,8 +263,46 @@ def test_revise_on_screen_length_enforced(tmp_path: Path, monkeypatch: pytest.Mo
     message = str(exc_info.value)
     assert "2" in message  # the expected entry count is named
     assert (project.dir / "storyboard.json").read_bytes() == sb_bytes
+    assert (project.dir / "script.json").read_bytes() == script_bytes
+    assert (project.dir / "narration.json").read_bytes() == narration_bytes
     for stage in project.GATED_STAGES:
         assert project.is_approved(stage) is True
+
+
+def test_revise_missing_tts_config_fails_before_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No config/tts.json: exit 2 before any write and before the LLM call."""
+    project, _tts = _seed(tmp_path, monkeypatch)
+    no_config = tmp_path / "no-config"
+    no_config.mkdir(exist_ok=True)
+    monkeypatch.chdir(no_config)  # no config/tts.json in sight
+    sb_bytes = (project.dir / "storyboard.json").read_bytes()
+    script_bytes = (project.dir / "script.json").read_bytes()
+    approvals_bytes = (project.dir / "approvals.json").read_bytes()
+    client = FakeClient(_GOOD_REPLY)
+    monkeypatch.setattr(cli, "LLMClient", lambda: client)
+
+    result = main(
+        [
+            "revise",
+            "--id",
+            _PROJECT_ID,
+            "--scene",
+            "opening",
+            "--instruction",
+            "tighten",
+            "--projects-root",
+            str(tmp_path / "projects"),
+        ]
+    )
+
+    assert result == 2
+    assert "config" in capsys.readouterr().err
+    assert client.calls == []
+    assert (project.dir / "storyboard.json").read_bytes() == sb_bytes
+    assert (project.dir / "script.json").read_bytes() == script_bytes
+    assert (project.dir / "approvals.json").read_bytes() == approvals_bytes
 
 
 def test_revise_scene_without_lines_gets_new_line(

@@ -19,9 +19,11 @@ def _system_prompt() -> str:
         "storyboard is already approved. Each storyboard kind renders a fixed "
         "on-screen contract, so write only what the presenter says:\n"
         f"{spec}\n\n"
-        "Style: conversational British narration, light and witty, one to "
-        "three sentences per scene. Do not invent facts beyond the scene "
-        "summaries.\n\n"
+        "Style: conversational British narration, light and witty. The "
+        "narration must fill the video's runtime at a natural speaking pace "
+        "of about 150 words per minute: aim for three to six substantial "
+        "sentences per scene, meeting the per-scene word budget given in the "
+        "brief. Do not invent facts beyond the scene summaries.\n\n"
         "Answer with JSON of the form "
         '{"lines": [{"scene_id": "...", "text": "..."}]}. '
         "Use exactly the storyboard's scene ids and write at least one line "
@@ -33,6 +35,8 @@ def _user_prompt(sb: Storyboard, brief: Brief) -> str:
     duration = (
         "unspecified" if brief.duration_minutes is None else f"{brief.duration_minutes:g} minutes"
     )
+    budget = int(sb.duration_seconds / 60 * 150)
+    per_scene = max(1, round(budget / len(sb.scenes))) if sb.scenes else budget
     objectives = "\n".join(f"- {o}" for o in brief.objectives) if brief.objectives else "- none"
     scenes = "\n".join(
         f"- {scene.id} ({scene.kind}, {scene.seconds:g}s): {scene.summary}"
@@ -42,7 +46,9 @@ def _user_prompt(sb: Storyboard, brief: Brief) -> str:
         f"Audience: {brief.audience}\n"
         f"Objectives:\n{objectives}\n"
         f"Tone: {brief.tone}\n"
-        f"Duration target: {duration}\n\n"
+        f"Duration target: {duration}\n"
+        f"Narration budget: about {budget} words in total, roughly {per_scene} "
+        "words per scene.\n\n"
         f"Approved storyboard ({sb.duration_seconds:g} seconds total):\n{scenes}\n\n"
         "Write the narration lines for every scene."
     )

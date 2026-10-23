@@ -13,7 +13,6 @@ REMOTION_DIR = REPO_ROOT / "remotion-starter"
 # Module-level alias so tests can monkeypatch subprocess execution.
 subprocess_run = subprocess.run
 
-_GATED_STAGES = ["storyboard", "duration", "script"]
 _STDERR_TAIL_CHARS = 2000
 
 
@@ -47,7 +46,7 @@ def render_video(project: Project, opts: RenderOptions | None = None) -> Path:
     """
     opts = opts or RenderOptions()
 
-    unapproved = [stage for stage in _GATED_STAGES if not project.is_approved(stage)]
+    unapproved = [stage for stage in Project.GATED_STAGES if not project.is_approved(stage)]
     if unapproved:
         raise GateError("render blocked, gates not approved for: " + ", ".join(unapproved))
 

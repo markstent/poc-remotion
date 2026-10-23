@@ -21,8 +21,10 @@ T = TypeVar("T", bound=BaseModel)
 
 
 def _default_post(url: str, key: str, payload: dict) -> str:
+    import urllib.error
     import urllib.request
 
+    timeout = int(os.getenv("LITELLM_TIMEOUT", "120"))
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
@@ -32,8 +34,12 @@ def _default_post(url: str, key: str, payload: dict) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return resp.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8")
+    except (urllib.error.HTTPError, urllib.error.URLError) as exc:
+        # str(exc) never carries request headers, so the key stays out of the message.
+        raise LLMError(f"gateway unreachable: {exc}") from exc
 
 
 class LLMClient:

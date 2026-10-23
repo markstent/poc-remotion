@@ -2,12 +2,15 @@
 
 import json
 
+from poc_remotion import cli
 from poc_remotion.cli import main
 
 
 def test_validate_ok_on_fresh_project(tmp_path, capsys, monkeypatch):
     """Brand validation passes when fonts_dir matches the brand's configured dir."""
     monkeypatch.chdir(tmp_path)
+    # Pin brand resolution to this test's fixture, not the repo copy.
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
 
     # Create a minimal valid brand setup
     brand_dir = tmp_path / "brand"
@@ -47,6 +50,8 @@ def test_validate_ok_on_fresh_project(tmp_path, capsys, monkeypatch):
 def test_validate_corrupt_brand_tokens(tmp_path, capsys, monkeypatch):
     """Brand validation fails with exit 2 when tokens key missing."""
     monkeypatch.chdir(tmp_path)
+    # Pin brand resolution to this test's fixture, not the repo copy.
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
 
     # Create brand dir with corrupt brand.json (removed tokens)
     brand_dir = tmp_path / "brand"
@@ -69,6 +74,8 @@ def test_validate_corrupt_brand_tokens(tmp_path, capsys, monkeypatch):
 def test_validate_missing_fonts_dir(tmp_path, capsys, monkeypatch):
     """Brand validation reports missing font problems when fonts dir is absent."""
     monkeypatch.chdir(tmp_path)
+    # Pin brand resolution to this test's fixture, not the repo copy.
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
 
     # Create a valid brand setup but with non-existent fonts_dir
     brand_dir = tmp_path / "brand"

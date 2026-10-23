@@ -2,6 +2,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 
 from poc_remotion.schemas import (
     ApprovalState,
@@ -22,6 +23,7 @@ _ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,63}$")
 class Project:
     dir: Path
     id: str
+    GATED_STAGES: ClassVar[list[str]] = ["storyboard", "duration", "script"]
 
     def __init__(self, dir: Path, id: str = "") -> None:
         self.dir = dir
@@ -94,12 +96,13 @@ class Project:
         path.write_text(json.dumps(raw, indent=2) + "\n")
 
     def is_approved(self, stage: str) -> bool:
+        if stage not in self.GATED_STAGES:
+            return False
         approvals = self._load_approvals()
         return bool(approvals.get(stage, False))
 
     def all_approved(self) -> bool:
-        approvals = self._load_approvals()
-        return all(approvals.get(s, False) for s in ["storyboard", "duration", "script"])
+        return all(self.is_approved(stage) for stage in self.GATED_STAGES)
 
     def manifest(self) -> ProjectManifest:
         return ProjectManifest(**json.loads((self.dir / "manifest.json").read_text()))

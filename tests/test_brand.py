@@ -72,6 +72,7 @@ def test_contrast_values():
     assert contrast_ratio("#C4F600", "#CCFFFF") < 4.5
 
 
+@pytest.mark.skipif(not Path("src/fonts").is_dir(), reason="local font binaries not present")
 def test_validate_ok_on_real_files():
     assert validate_brand(load_brand(), Path("src/fonts")) == []
 

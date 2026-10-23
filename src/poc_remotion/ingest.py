@@ -18,7 +18,7 @@ def ingest_markdown(path: Path) -> SourceRef:
     sha256_full = hashlib.sha256(bytes_data).hexdigest()
     content_id = sha256_full[:12]
 
-    text = bytes_data.decode("utf-8")
+    text = bytes_data.decode("utf-8-sig")
     lines = text.split("\n")
 
     title = ""

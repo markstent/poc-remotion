@@ -8,6 +8,8 @@ from poc_remotion.brand import load_brand, validate_brand
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def _print_error(msg: str) -> None:
     """Print error message to stderr."""
@@ -71,6 +73,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:
+        if isinstance(exc.code, int) and exc.code == 0:
+            # --help: let the zero exit status pass through to the caller.
+            raise
         if isinstance(exc.code, int):
             raise CommandParseError(f"parse error (exit code {exc.code})") from exc
         raise CommandParseError(str(exc)) from exc
@@ -146,9 +151,9 @@ def cmd_validate(args: argparse.Namespace) -> int:
         if (project_path / "sources.json").exists():
             project.load_sources()
 
-        # Run brand validation as per brief requirement
-        brand = load_brand(Path("brand/brand.json"))
-        problems = validate_brand(brand, Path(brand.fonts_dir))
+        # Run brand validation against repo-owned brand files (cwd independent)
+        brand = load_brand(REPO_ROOT / "brand/brand.json")
+        problems = validate_brand(brand, REPO_ROOT / brand.fonts_dir)
         if problems:
             for problem in problems:
                 _print_error(problem)
@@ -159,8 +164,9 @@ def cmd_validate(args: argparse.Namespace) -> int:
     except ProjectError as exc:
         _print_error(str(exc))
         return 2
-    except ValueError as exc:
-        # Covers pydantic.ValidationError as well
+    except (ValueError, TypeError, OSError) as exc:
+        # Covers pydantic.ValidationError (ValueError), non-mapping JSON
+        # documents (TypeError) and unreadable files (OSError).
         _print_error(f"validation error: {exc}")
         return 2
 
@@ -188,6 +194,11 @@ def main(argv: list[str] | None = None) -> int:
     except CommandParseError as exc:
         _print_error(str(exc))
         return 2
+    except SystemExit as exc:
+        # _parse_args only lets --help (SystemExit 0) through.
+        if isinstance(exc.code, int) and exc.code == 0:
+            return 0
+        raise
 
     if args.command == "init":
         return cmd_init(args)

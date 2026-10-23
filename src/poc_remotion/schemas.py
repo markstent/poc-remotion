@@ -81,6 +81,10 @@ class DiscoveryAnswer(BaseModel):
     answer: str
 
 
+class DiscoveryQuestions(BaseModel):
+    questions: list[str] = Field(..., min_length=4, max_length=8)
+
+
 class Brief(BaseModel):
     audience: str = ""
     objectives: list[str] = Field(default_factory=list)
@@ -120,6 +124,7 @@ def generate_json_schemas(out_dir: Path) -> list[Path]:
         (ApprovalState, "ApprovalState"),
         (Brief, "Brief"),
         (DiscoveryAnswer, "DiscoveryAnswer"),
+        (DiscoveryQuestions, "DiscoveryQuestions"),
         (ProjectManifest, "ProjectManifest"),
     ]
 

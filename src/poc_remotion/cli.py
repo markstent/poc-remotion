@@ -5,7 +5,9 @@ import sys
 from pathlib import Path
 
 from poc_remotion.brand import load_brand, validate_brand
+from poc_remotion.discovery import DraftError, run_discovery
 from poc_remotion.ingest import ingest_markdown
+from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
 
@@ -82,6 +84,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Source markdown file (repeatable; replaces any previously saved sources)",
     )
     ingest_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    discover_parser = subparsers.add_parser(
+        "discover", help="Generate discovery questions from registered sources"
+    )
+    discover_parser.add_argument("--id", required=True, help="Project identifier")
+    discover_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -211,6 +221,29 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         return 2
 
 
+def cmd_discover(args: argparse.Namespace) -> int:
+    """Handle discover subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        questions = run_discovery(project, LLMClient())
+        for number, question in enumerate(questions, start=1):
+            print(f"{number}. {question}")
+        return 0
+    except (DraftError, ProjectError, LLMError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt sources.json or brief.json payloads (JSON decode,
+        # pydantic validation, non-mapping documents), matching the handlers
+        # in cmd_validate and cmd_ingest.
+        _print_error(f"discover error: {exc}")
+        return 2
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -252,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_render(args)
     if args.command == "ingest":
         return cmd_ingest(args)
+    if args.command == "discover":
+        return cmd_discover(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

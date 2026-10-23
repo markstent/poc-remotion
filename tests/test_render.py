@@ -87,8 +87,11 @@ def test_render_runs_cargo_in_renderer_dir(tmp_path, renderer, monkeypatch):
 
     monkeypatch.setattr(render_module, "subprocess_run", _run)
     render_video(p)
-    assert seen["cmd"] == ["cargo", "run", "--release", "--quiet", "--", "render"]
+    assert seen["cmd"][0].endswith("cargo")
+    assert seen["cmd"][1:] == ["run", "--release", "--quiet", "--", "render"]
     assert seen["kw"]["cwd"] == renderer
+    cargo_parent = str(render_module._resolve_cargo().parent)
+    assert seen["kw"]["env"]["PATH"].startswith(cargo_parent)
 
 
 def test_render_stages_storyboard_and_narration(tmp_path, renderer, fake_render):
@@ -277,3 +280,29 @@ def test_render_missing_fonts_fails(tmp_path, renderer, monkeypatch):
     monkeypatch.setattr(render_module, "subprocess_run", _boom)
     with pytest.raises(RuntimeError, match="font"):
         render_video(p)
+
+
+def test_resolve_cargo_prefers_cargo_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("CARGO", str(tmp_path / "custom-cargo"))
+    assert render_module._resolve_cargo() == tmp_path / "custom-cargo"
+
+
+def test_resolve_cargo_falls_back_to_rustup_toolchain(tmp_path, monkeypatch):
+    """Without PATH or ~/.cargo/bin, any rustup toolchain cargo is used."""
+    monkeypatch.delenv("CARGO", raising=False)
+    monkeypatch.setattr(render_module.shutil, "which", lambda name: None)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    toolchain = tmp_path / ".rustup" / "toolchains" / "stable-x" / "bin"
+    toolchain.mkdir(parents=True)
+    cargo = toolchain / "cargo"
+    cargo.write_bytes(b"#!/bin/sh\n")
+    cargo.chmod(0o755)
+    assert render_module._resolve_cargo() == cargo
+
+
+def test_resolve_cargo_missing_raises(tmp_path, monkeypatch):
+    monkeypatch.delenv("CARGO", raising=False)
+    monkeypatch.setattr(render_module.shutil, "which", lambda name: None)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(RuntimeError, match="cargo not found"):
+        render_module._resolve_cargo()

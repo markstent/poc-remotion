@@ -1,6 +1,7 @@
 """Gated render bridge: render a project's video through the fframes renderer."""
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -39,6 +40,34 @@ def _stderr_tail(text: str | None) -> str:
     if not text:
         return ""
     return text.strip()[-_STDERR_TAIL_CHARS:]
+
+
+def _resolve_cargo() -> Path:
+    """Locate the cargo executable.
+
+    Resolution order: ``$CARGO``, ``PATH``, ``~/.cargo/bin``, then any rustup
+    toolchain bin directory (covers rustup installs that did not create
+    ``~/.cargo/bin`` shims).
+
+    Raises:
+        RuntimeError: when no cargo executable can be found.
+    """
+    env_cargo = os.environ.get("CARGO")
+    if env_cargo:
+        return Path(env_cargo)
+    found = shutil.which("cargo")
+    if found:
+        return Path(found)
+    home = Path.home()
+    candidates = [home / ".cargo" / "bin" / "cargo"]
+    toolchains = sorted((home / ".rustup" / "toolchains").glob("*/bin/cargo"))
+    candidates.extend(toolchains)
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise RuntimeError(
+        "cargo not found: install Rust via rustup or set $CARGO to the cargo binary"
+    )
 
 
 def _load_narration(project: Project) -> dict | None:
@@ -164,14 +193,19 @@ def render_video(project: Project) -> Path:
     else:
         (DATA_DIR / NARRATION_FILENAME).unlink(missing_ok=True)
 
-    cmd = ["cargo", "run", "--release", "--quiet", "--", "render"]
+    cargo = _resolve_cargo()
+    cmd = [str(cargo), "run", "--release", "--quiet", "--", "render"]
+    # cargo needs its sibling rustc on PATH (rustup installs without
+    # ~/.cargo/bin shims have no other way to find the toolchain).
+    env = dict(os.environ)
+    env["PATH"] = f"{cargo.parent}{os.pathsep}{env.get('PATH', '')}"
 
     staged_audio: list[Path] = []
     try:
         _stage_fonts()
         if narration is not None:
             staged_audio = _stage_narration_audio(narration, project)
-        proc = subprocess_run(cmd, cwd=RENDERER_DIR, capture_output=True, text=True)
+        proc = subprocess_run(cmd, cwd=RENDERER_DIR, capture_output=True, text=True, env=env)
         if proc.returncode != 0:
             raise RuntimeError(
                 f"renderer failed (exit {proc.returncode}): {_stderr_tail(proc.stderr)}"

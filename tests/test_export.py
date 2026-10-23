@@ -89,7 +89,8 @@ def test_export_bundle_complete(tmp_path, fake_render, capsys):
 
     assert bundle == p.dir / "output" / "bundle"
     assert sorted(f.name for f in bundle.iterdir()) == BUNDLE_FILES
-    assert captured["cmd"] == ["cargo", "run", "--release", "--quiet", "--", "render"]
+    assert captured["cmd"][0].endswith("cargo")
+    assert captured["cmd"][1:] == ["run", "--release", "--quiet", "--", "render"]
     srt, skipped = srt_from_script(p.load_script())
     assert skipped == 0
     assert (bundle / "demo.srt").read_text() == srt

@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from poc_remotion.schemas import (
     ApprovalState,
+    Brief,
     ProjectManifest,
     ScriptDoc,
     SourceRef,
@@ -86,6 +87,23 @@ class Project:
         if not path.exists():
             raise ProjectError(f"script.json missing in {self.dir}")
         return ScriptDoc(**json.loads(path.read_text()))
+
+    def save_brief(self, brief: Brief) -> None:
+        (self.dir / "brief.json").write_text(json.dumps(brief.model_dump(mode="json"), indent=2) + "\n")
+        self._update_manifest()
+
+    def load_brief(self) -> Brief:
+        path = self.dir / "brief.json"
+        if not path.exists():
+            raise ProjectError(f"brief.json missing in {self.dir}")
+        return Brief.model_validate(json.loads(path.read_text()))
+
+    def brief_present(self) -> bool:
+        path = self.dir / "brief.json"
+        if not path.exists():
+            return False
+        brief = Brief.model_validate(json.loads(path.read_text()))
+        return bool(brief.qa) or bool(brief.audience)
 
     def record_approval(self, stage: str) -> None:
         path = self.dir / "approvals.json"

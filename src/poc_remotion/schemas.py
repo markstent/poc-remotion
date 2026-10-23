@@ -76,6 +76,20 @@ class ApprovalState(BaseModel):
     script: bool = False
 
 
+class DiscoveryAnswer(BaseModel):
+    question: str
+    answer: str
+
+
+class Brief(BaseModel):
+    audience: str = ""
+    objectives: list[str] = Field(default_factory=list)
+    tone: str = ""
+    duration_minutes: float | None = None
+    notes: str = ""
+    qa: list[DiscoveryAnswer] = Field(default_factory=list)
+
+
 class ProjectManifest(BaseModel):
     id: str
     created_at: str

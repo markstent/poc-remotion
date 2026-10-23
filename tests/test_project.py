@@ -59,3 +59,33 @@ def test_storyboard_roundtrip_through_store(tmp_path: Path) -> None:
     sb = _fixture_storyboard()
     p.save_storyboard(sb)
     assert Project.load(p.dir).load_storyboard() == sb
+
+
+def test_brief_roundtrip(tmp_path: Path) -> None:
+    from poc_remotion.schemas import Brief, DiscoveryAnswer
+
+    p = Project.create(tmp_path / "projects" / "demo", "demo")
+    brief = Brief(
+        audience="developers",
+        qa=[DiscoveryAnswer(question="What?", answer="This.")],
+    )
+    p.save_brief(brief)
+    assert p.load_brief() == brief
+
+
+def test_load_brief_missing_raises(tmp_path: Path) -> None:
+    p = Project.create(tmp_path / "projects" / "demo", "demo")
+    (p.dir / "brief.json").unlink()
+    with pytest.raises(ProjectError, match="brief.json"):
+        p.load_brief()
+
+
+def test_brief_present(tmp_path: Path) -> None:
+    from poc_remotion.schemas import Brief, DiscoveryAnswer
+
+    p = Project.create(tmp_path / "projects" / "demo", "demo")
+    assert not p.brief_present()
+    p.save_brief(Brief(qa=[DiscoveryAnswer(question="Q?", answer="A.")]))
+    assert p.brief_present()
+    p.save_brief(Brief())
+    assert not p.brief_present()

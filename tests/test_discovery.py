@@ -93,7 +93,9 @@ def test_discovery_is_resumable(tmp_path, capsys, monkeypatch):
     assert all(qa["answer"] == "" for qa in data["qa"][1:])
     out_lines = capsys.readouterr().out.splitlines()
     # The helper's ingest line precedes the discover block: last 5 lines only.
-    assert out_lines[-len(QUESTIONS)] == f"1. {QUESTIONS[0]}"
+    assert out_lines[-len(QUESTIONS):] == [
+        f"{i}. {q}" for i, q in enumerate(QUESTIONS, 1)
+    ]
 
 
 def test_discovery_requires_sources(tmp_path, capsys, monkeypatch):

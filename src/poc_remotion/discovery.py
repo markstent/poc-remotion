@@ -46,6 +46,8 @@ def run_discovery(project: Project, client: LLMClient) -> list[str]:
     )
 
     result = client.chat_json(system, user, DiscoveryQuestions)
+    # The schema's min_length usually rejects empty replies in chat_json
+    # before this guard; it remains as defence in depth for stub clients.
     if not result.questions:
         raise DraftError("discovery returned no questions")
 

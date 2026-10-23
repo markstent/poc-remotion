@@ -8,6 +8,7 @@ from pathlib import Path
 from poc_remotion.brand import load_brand, validate_brand
 from poc_remotion.claims import run_claims
 from poc_remotion.discovery import DraftError, capture_brief, run_discovery
+from poc_remotion.export import ExportError, run_export
 from poc_remotion.ingest import ingest_markdown
 from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.narrate import NarrateError, run_narrate
@@ -166,6 +167,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--instruction", required=True, help="What to change in the scene"
     )
     revise_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    export_parser = subparsers.add_parser(
+        "export", help="Render the video and assemble the export bundle"
+    )
+    export_parser.add_argument("--id", required=True, help="Project identifier")
+    export_parser.add_argument(
+        "--scale", type=float, default=1.0, help="Render scale factor"
+    )
+    export_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -596,6 +608,31 @@ def cmd_render(args: argparse.Namespace) -> int:
         return 2
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Handle export subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        bundle = run_export(project, scale=args.scale)
+    except (ExportError, ProjectError, RuntimeError, TTSConfigError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers invalid JSON documents (pydantic ValidationError is a
+        # ValueError) and unreadable repo config files (OSError), matching
+        # the handlers in the other content commands.
+        _print_error(f"export error: {exc}")
+        return 2
+
+    print(bundle)
+    for name in sorted(path.name for path in bundle.iterdir()):
+        print(name)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI. Returns exit codes: 0 success, 2 on error."""
     try:
@@ -637,6 +674,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_export_srt(args)
     if args.command == "revise":
         return cmd_revise(args)
+    if args.command == "export":
+        return cmd_export(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

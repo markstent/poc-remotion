@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from poc_remotion.brand import load_brand, validate_brand
+from poc_remotion.ingest import ingest_markdown
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
 
@@ -67,6 +68,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--scale", type=float, default=1.0, help="Render scale factor"
     )
     render_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    ingest_parser = subparsers.add_parser(
+        "ingest", help="Register source markdown files for a project"
+    )
+    ingest_parser.add_argument("--id", required=True, help="Project identifier")
+    ingest_parser.add_argument(
+        "--source",
+        action="append",
+        required=True,
+        help="Source markdown file (repeatable; replaces any previously saved sources)",
+    )
+    ingest_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -171,6 +186,29 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 2
 
 
+def cmd_ingest(args: argparse.Namespace) -> int:
+    """Handle ingest subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        sources = [ingest_markdown(Path(path)) for path in args.source]
+        project.save_sources(sources)
+        for source in sources:
+            print(f"{source.id}  {source.title}  ({len(source.headings)} headings)")
+        return 0
+    except ProjectError as exc:
+        _print_error(str(exc))
+        return 2
+    except (OSError, ValueError) as exc:
+        # Covers unreadable or missing files (OSError) and bad markdown
+        # payloads such as UTF-8 decode failures (ValueError).
+        _print_error(f"ingest error: {exc}")
+        return 2
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -210,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_validate(args)
     if args.command == "render":
         return cmd_render(args)
+    if args.command == "ingest":
+        return cmd_ingest(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

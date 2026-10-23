@@ -1,9 +1,16 @@
 
 
 import json
+from pathlib import Path
 
 from poc_remotion import cli
 from poc_remotion.cli import main
+
+
+def _write_markdown(path: Path, title: str, headings: list[str]) -> None:
+    """Write a minimal markdown file with a title and section headings."""
+    lines = [f"# {title}"] + [f"## {heading}" for heading in headings]
+    path.write_text("\n".join(lines) + "\n")
 
 
 def test_validate_ok_on_fresh_project(tmp_path, capsys, monkeypatch):
@@ -140,6 +147,110 @@ def test_bad_stage_exits_two(tmp_path):
         ["approve", "--id", "demo", "--stage", "nope", "--projects-root", str(tmp_path)]
     )
     assert result == 2
+
+
+def test_ingest_saves_sources(tmp_path, capsys):
+    """Ingest saves one SourceRef per file with absolute paths and prints a summary line."""
+    project_root = tmp_path / "projects"
+    assert main(["init", "--id", "demo", "--projects-root", str(project_root)]) == 0
+
+    src_a = tmp_path / "a.md"
+    _write_markdown(src_a, "Alpha Doc", ["One", "Two"])
+    src_b = tmp_path / "b.md"
+    _write_markdown(src_b, "Beta Doc", ["Three"])
+
+    result = main(
+        [
+            "ingest",
+            "--id",
+            "demo",
+            "--source",
+            str(src_a),
+            "--source",
+            str(src_b),
+            "--projects-root",
+            str(project_root),
+        ]
+    )
+    assert result == 0
+
+    data = json.loads((project_root / "demo" / "sources.json").read_text())
+    assert len(data) == 2
+    for entry in data:
+        assert {"id", "title", "path", "kind"} <= set(entry)
+        assert entry["kind"] == "markdown"
+        assert Path(entry["path"]).is_absolute()
+    assert data[0]["title"] == "Alpha Doc"
+    assert data[0]["path"] == str(src_a.absolute())
+    assert data[1]["title"] == "Beta Doc"
+
+    out = capsys.readouterr().out
+    assert f"{data[0]['id']}  Alpha Doc  (2 headings)" in out
+    assert f"{data[1]['id']}  Beta Doc  (1 headings)" in out
+
+
+def test_ingest_missing_file_exits_two(tmp_path, capsys):
+    """Ingest exits 2 with a message when a source file does not exist."""
+    project_root = tmp_path / "projects"
+    main(["init", "--id", "demo", "--projects-root", str(project_root)])
+
+    missing = tmp_path / "missing.md"
+    result = main(
+        [
+            "ingest",
+            "--id",
+            "demo",
+            "--source",
+            str(missing),
+            "--projects-root",
+            str(project_root),
+        ]
+    )
+    assert result == 2
+    assert str(missing) in capsys.readouterr().err
+
+
+def test_ingest_replace_all_semantics(tmp_path):
+    """A later ingest run replaces sources.json entirely."""
+    project_root = tmp_path / "projects"
+    main(["init", "--id", "demo", "--projects-root", str(project_root)])
+
+    src_a = tmp_path / "a.md"
+    _write_markdown(src_a, "Alpha Doc", ["One"])
+    src_b = tmp_path / "b.md"
+    _write_markdown(src_b, "Beta Doc", ["Two"])
+
+    first = main(
+        [
+            "ingest",
+            "--id",
+            "demo",
+            "--source",
+            str(src_a),
+            "--source",
+            str(src_b),
+            "--projects-root",
+            str(project_root),
+        ]
+    )
+    assert first == 0
+
+    second = main(
+        [
+            "ingest",
+            "--id",
+            "demo",
+            "--source",
+            str(src_a),
+            "--projects-root",
+            str(project_root),
+        ]
+    )
+    assert second == 0
+
+    data = json.loads((project_root / "demo" / "sources.json").read_text())
+    assert len(data) == 1
+    assert data[0]["title"] == "Alpha Doc"
 
 
 def test_validate_detects_corrupt_storyboard(tmp_path):

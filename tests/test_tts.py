@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from poc_remotion.tts import KokoroAdapter, TTSConfigError, load_tts_config
+from poc_remotion.tts import (
+    KokoroAdapter,
+    TTSConfigError,
+    _lang_tag_for,
+    load_tts_config,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,6 +93,16 @@ def test_zero_frame_wav_reports_zero_duration(tmp_path: Path) -> None:
     result = adapter.synthesize("Silence.", "af_heart", tmp_path / "unused.wav")
 
     assert result.duration_seconds == 0.0
+
+
+def test_lang_tag_pinned_to_en_us() -> None:
+    """All voices phonemise en-us: the user's approved sound for bf_emma.
+
+    Any flip must also clear project audio dirs: the cache key covers
+    voice + text only, so stale phonemised wavs would otherwise be reused.
+    """
+    assert _lang_tag_for("af_heart") == "en-us"
+    assert _lang_tag_for("bf_emma") == "en-us"
 
 
 def test_cache_path_is_pure_computation(tmp_path: Path) -> None:

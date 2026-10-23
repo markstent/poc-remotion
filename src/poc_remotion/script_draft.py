@@ -37,7 +37,7 @@ def _user_prompt(sb: Storyboard, brief: Brief) -> str:
     duration = (
         "unspecified" if brief.duration_minutes is None else f"{brief.duration_minutes:g} minutes"
     )
-    budget = int(sb.duration_seconds / 60 * 150)
+    budget = int(sb.duration_seconds / 60 * _WORDS_PER_MINUTE)
     per_scene = max(1, round(budget / len(sb.scenes))) if sb.scenes else budget
     objectives = "\n".join(f"- {o}" for o in brief.objectives) if brief.objectives else "- none"
     scenes = "\n".join(

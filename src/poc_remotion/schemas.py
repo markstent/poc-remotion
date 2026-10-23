@@ -74,7 +74,13 @@ class Cue(BaseModel):
 
 
 class NarrationLine(BaseModel):
-    """One narration cue: timed text plus its public audio file path."""
+    """One narration cue: timed text plus its public audio file path.
+
+    ``cues`` is an audit record of the caption windows carved from this
+    line. Nothing renders them: burned-in captions were removed by user
+    decision on video 1 and the SRT sidecar re-derives cues from
+    ``script.json`` via ``subtitles.chunk_line``.
+    """
 
     scene_id: str
     text: str

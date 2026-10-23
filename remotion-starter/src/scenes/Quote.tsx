@@ -35,8 +35,8 @@ export function Quote({
   const { width, height } = useVideoConfig();
 
   const line = scene.on_screen[0] ?? "";
-  // Longer quotes shrink a step so the block stays clear of the caption pill
-  // band along the bottom of the frame.
+  // Longer quotes shrink a step so the block stays clear of the lower
+  // third and remains readable at a glance.
   const wordCount = line.split(/\s+/).filter(Boolean).length;
   const fontSize = wordCount <= 8 ? 132 : wordCount <= 12 ? 108 : 88;
 

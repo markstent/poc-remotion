@@ -104,6 +104,36 @@ def test_claims_extracted_and_supported(tmp_path, capsys, monkeypatch):
     assert "25 days of leave" in user
 
 
+def test_claims_match_multiple_sources_and_whitespace(tmp_path, capsys, monkeypatch):
+    """A heading matching several sources lists every id; surrounding whitespace is stripped."""
+    second = SourceRef(
+        id="policy-faq",
+        title="Policy FAQ",
+        path="sources/faq.md",
+        kind="markdown",
+        sha256="b" * 64,
+        headings=["leave policy"],
+    )
+    project_root = _seeded_project(tmp_path)
+    project = Project.load(project_root / "demo")
+    project.save_sources([_source(), second])
+    _patch_client(
+        monkeypatch,
+        [
+            _claim_reply([{"text": "Annual leave is 25 days.", "source_heading": " Leave Policy "}]),
+            _claim_reply([]),
+        ],
+    )
+
+    result = main(["claims", "--id", "demo", "--projects-root", str(project_root)])
+
+    assert result == 0
+    data = json.loads((project_root / "demo" / "claims.json").read_text())
+    assert data[0]["source_ids"] == ["handbook", "policy-faq"]
+    assert data[0]["locator"] == "Leave Policy"
+    assert data[0]["status"] == "supported"
+
+
 def test_claims_unresolved_when_heading_unknown(tmp_path, capsys, monkeypatch):
     """A heading that matches no source heading leaves the claim unresolved."""
     project_root = _seeded_project(tmp_path)

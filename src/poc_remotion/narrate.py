@@ -24,10 +24,12 @@ def _synthesize_all(
     results: list[TtsResult] = []
     for i, line in enumerate(script.lines):
         try:
-            results.append(tts.synthesize(line.text, voice, project.dir / "audio" / "line.wav"))
+            results.append(
+                tts.synthesize(line.text, voice, project.dir / "audio" / f"line-{i}.wav")
+            )
         except Exception as exc:
             raise NarrateError(
-                f"line {i} (scene {line.scene_id}): synthesis failed: {exc}"
+                f"script line {i + 1} (scene {line.scene_id}): synthesis failed: {exc}"
             ) from exc
     return results
 
@@ -75,7 +77,7 @@ def _compute_timings(
     return starts, ends, spans, last_line_end + SCENE_TAIL
 
 
-def run_narrate(project: Project, tts: KokoroAdapter) -> dict:
+def run_narrate(project: Project, tts: KokoroAdapter) -> dict[str, float | int]:
     """Synthesise every script line and rewrite timings from the real audio.
 
     Phase one synthesises all lines through the adapter cache; any engine
@@ -86,6 +88,10 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict:
     duration_seconds becomes the last line end plus SCENE_TAIL. Approvals
     are untouched: timing is not a content change. Returns a summary dict
     ``{total_seconds, lines, audio_files}``.
+
+    Scene starts are rerun-stable only when audio spans drive them; on an
+    immediate rerun a plan-dominated boundary can pull a scene start earlier
+    before the timings converge.
     """
     missing = [stage for stage in project.GATED_STAGES if not project.is_approved(stage)]
     if missing:
@@ -99,6 +105,10 @@ def run_narrate(project: Project, tts: KokoroAdapter) -> dict:
         raise NarrateError("storyboard has no scenes to narrate")
     if not script.lines:
         raise NarrateError("script has no lines to narrate")
+    known = {scene.id for scene in sb.scenes}
+    unknown = sorted({line.scene_id for line in script.lines} - known)
+    if unknown:
+        raise NarrateError(f"script references unknown scenes: {', '.join(unknown)}")
 
     # R-C1: the CLI layer owns the config; the adapter only receives the
     # voice per synthesize call and never reads the config itself.

@@ -215,6 +215,42 @@ def test_narrate_long_audio_grows_scene(
     assert "warning" in out
 
 
+def test_narrate_skips_warning_without_duration_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No brief duration target: no window warning is printed."""
+    _project, _tts, engine, root = _seed(
+        tmp_path,
+        monkeypatch,
+        durations={"first line": 40.0, "second line": 0.5, "third line": 0.5},
+        duration_minutes=None,
+    )
+    monkeypatch.setattr(
+        cli,
+        "KokoroAdapter",
+        lambda cache_dir: KokoroAdapter(cache_dir=cache_dir, engine=engine),
+    )
+
+    result = main(["narrate", "--id", _PROJECT_ID, "--projects-root", str(root)])
+
+    assert result == 0
+    assert "warning" not in capsys.readouterr().out
+
+
+def test_narrate_unknown_scene_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A script line naming an unknown scene id fails before any synthesis."""
+    project, tts, engine, _root = _seed(
+        tmp_path,
+        monkeypatch,
+        lines=[("opening", "first line"), ("ghost", "orphan line")],
+    )
+
+    with pytest.raises(NarrateError, match="ghost"):
+        run_narrate(project, tts)
+
+    assert engine.calls == []
+
+
 def test_narrate_engine_failure_leaves_project_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -225,7 +261,7 @@ def test_narrate_engine_failure_leaves_project_untouched(
     script_mtime = (project.dir / "script.json").stat().st_mtime_ns
     sb_mtime = (project.dir / "storyboard.json").stat().st_mtime_ns
 
-    with pytest.raises(NarrateError, match=r"line 1 .*synthesis failed"):
+    with pytest.raises(NarrateError, match=r"script line 2 .*synthesis failed"):
         run_narrate(project, tts)
 
     assert (project.dir / "script.json").read_bytes() == script_bytes

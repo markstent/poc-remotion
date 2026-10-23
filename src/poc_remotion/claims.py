@@ -12,7 +12,7 @@ class ExtractedClaim(BaseModel):
     """One factual claim as returned by the model for a script line."""
 
     text: str
-    source_heading: str
+    source_heading: str | None = None
 
 
 class ClaimReply(BaseModel):
@@ -32,10 +32,20 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _user_prompt(line: ScriptLine) -> str:
+def _user_prompt(line: ScriptLine, sources: list[SourceRef]) -> str:
+    headings: list[str] = []
+    for source in sources:
+        for heading in source.headings:
+            if heading not in headings:
+                headings.append(heading)
+    listed = "\n".join(f"- {heading}" for heading in headings) or "- (none)"
     return (
         f"Script line (scene {line.scene_id}):\n{line.text}\n\n"
-        "Extract the factual claims for this line."
+        "The registered source headings are:\n"
+        f"{listed}\n\n"
+        "For each claim, copy the single best supporting heading EXACTLY as "
+        "it appears in that list, or use null when no heading supports it. "
+        "Do not invent headings. Extract the factual claims for this line."
     )
 
 
@@ -81,8 +91,19 @@ def run_claims(project: Project, client: LLMClient) -> list[Claim]:
 
     claims: list[Claim] = []
     for line_no, line in enumerate(script.lines, start=1):
-        reply = client.chat_json(_SYSTEM_PROMPT, _user_prompt(line), ClaimReply)
+        reply = client.chat_json(_SYSTEM_PROMPT, _user_prompt(line, sources), ClaimReply)
         for n, extracted in enumerate(reply.claims, start=1):
+            if extracted.source_heading is None:
+                claims.append(
+                    Claim(
+                        id=f"claim-{line_no}-{n}",
+                        text=extracted.text,
+                        source_ids=[],
+                        locator=None,
+                        status="unresolved",
+                    )
+                )
+                continue
             matched_heading, source_ids = _match_sources(sources, extracted.source_heading)
             if source_ids:
                 claims.append(

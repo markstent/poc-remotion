@@ -96,12 +96,35 @@ def test_claims_extracted_and_supported(tmp_path, capsys, monkeypatch):
     assert "claim-1-1  supported  Annual leave is 25 days." in out
     assert "unresolved" not in out
 
-    # One call per script line; the system prompt names the job.
+    # One call per script line; the system prompt names the job and the
+    # user prompt lists the registered headings to pick from.
     assert len(calls) == 2
     system = calls[0]["messages"][0]["content"]
     user = calls[0]["messages"][1]["content"]
     assert "claim extraction" in system
     assert "25 days of leave" in user
+    assert "Leave Policy" in user
+    assert "Do not invent headings" in user
+
+
+def test_claims_null_heading_stays_unresolved(tmp_path, capsys, monkeypatch):
+    """A claim with a null heading is unresolved with no locator."""
+    project_root = _seeded_project(tmp_path)
+    _patch_client(
+        monkeypatch,
+        [
+            _claim_reply([{"text": "Copilot feels friendly.", "source_heading": None}]),
+            _claim_reply([]),
+        ],
+    )
+
+    result = main(["claims", "--id", "demo", "--projects-root", str(project_root)])
+
+    assert result == 0
+    data = json.loads((project_root / "demo" / "claims.json").read_text())
+    assert data[0]["status"] == "unresolved"
+    assert data[0]["source_ids"] == []
+    assert data[0]["locator"] is None
 
 
 def test_claims_match_multiple_sources_and_whitespace(tmp_path, capsys, monkeypatch):

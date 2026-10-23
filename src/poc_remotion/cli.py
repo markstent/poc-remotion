@@ -202,9 +202,11 @@ def cmd_ingest(args: argparse.Namespace) -> int:
     except ProjectError as exc:
         _print_error(str(exc))
         return 2
-    except (OSError, ValueError) as exc:
-        # Covers unreadable or missing files (OSError) and bad markdown
-        # payloads such as UTF-8 decode failures (ValueError).
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers unreadable or missing files (OSError), bad markdown
+        # payloads such as UTF-8 decode failures (ValueError), and
+        # corrupt non-mapping manifest JSON (TypeError), matching
+        # cmd_validate's handler.
         _print_error(f"ingest error: {exc}")
         return 2
 

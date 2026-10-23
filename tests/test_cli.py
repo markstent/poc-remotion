@@ -208,6 +208,29 @@ def test_ingest_missing_file_exits_two(tmp_path, capsys):
     )
     assert result == 2
     assert str(missing) in capsys.readouterr().err
+    assert not (project_root / "demo" / "sources.json").exists()
+
+
+def test_ingest_invalid_markdown_exits_two(tmp_path, capsys):
+    """Ingest exits 2 with a message when a source file is not valid markdown text."""
+    project_root = tmp_path / "projects"
+    main(["init", "--id", "demo", "--projects-root", str(project_root)])
+
+    bad = tmp_path / "bad.md"
+    bad.write_bytes(b"\xff\xfe\x00")
+    result = main(
+        [
+            "ingest",
+            "--id",
+            "demo",
+            "--source",
+            str(bad),
+            "--projects-root",
+            str(project_root),
+        ]
+    )
+    assert result == 2
+    assert "ingest error" in capsys.readouterr().err
 
 
 def test_ingest_replace_all_semantics(tmp_path):

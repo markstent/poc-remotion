@@ -10,11 +10,13 @@ from poc_remotion.claims import run_claims
 from poc_remotion.discovery import DraftError, capture_brief, run_discovery
 from poc_remotion.ingest import ingest_markdown
 from poc_remotion.llm import LLMClient, LLMError
+from poc_remotion.narrate import NarrateError, run_narrate
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
 from poc_remotion.schemas import DiscoveryAnswer
 from poc_remotion.script_draft import run_script
-from poc_remotion.storyboard import run_storyboard
+from poc_remotion.storyboard import DURATION_TOLERANCE, run_storyboard
+from poc_remotion.tts import KokoroAdapter, TTSConfigError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -134,6 +136,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     claims_parser.add_argument("--id", required=True, help="Project identifier")
     claims_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    narrate_parser = subparsers.add_parser(
+        "narrate", help="Synthesise narration audio and write audio-true timings"
+    )
+    narrate_parser.add_argument("--id", required=True, help="Project identifier")
+    narrate_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -418,6 +428,61 @@ def cmd_claims(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_narrate(args: argparse.Namespace) -> int:
+    """Handle narrate subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        brief = project.load_brief()
+        tts = KokoroAdapter(cache_dir=project.dir / "audio")
+        summary = run_narrate(project, tts)
+        sb = project.load_storyboard()
+        script = project.load_script()
+    except (NarrateError, TTSConfigError, ProjectError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt brief.json, storyboard.json or script.json payloads
+        # (JSON decode, pydantic validation, non-mapping documents), matching
+        # the handlers in cmd_validate, cmd_ingest, cmd_discover, cmd_brief,
+        # cmd_draft_storyboard, cmd_draft_script and cmd_claims.
+        _print_error(f"narrate error: {exc}")
+        return 2
+
+    print("scene  audio span  seconds")
+    for scene in sb.scenes:
+        times = [
+            (line.start_seconds, line.end_seconds)
+            for line in script.lines
+            if line.scene_id == scene.id and line.start_seconds is not None
+        ]
+        if not times:
+            continue
+        first = min(start for start, _ in times)
+        last = max(end for _, end in times)
+        print(f"{scene.id}  {first:.2f}-{last:.2f}  {scene.seconds:.2f}")
+    total = summary["total_seconds"]
+    print(
+        f"total  {total:.2f}s  {summary['lines']} lines  "
+        f"{summary['audio_files']} audio files"
+    )
+
+    if brief.duration_minutes is not None:
+        target = brief.duration_minutes * 60
+        if abs(total - target) > DURATION_TOLERANCE * target:
+            low = target * (1 - DURATION_TOLERANCE)
+            high = target * (1 + DURATION_TOLERANCE)
+            print(
+                f"warning: total {total:.2f}s is outside the "
+                f"{brief.duration_minutes:g} minute target window "
+                f"({low:.2f}s to {high:.2f}s)"
+            )
+    return 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -469,6 +534,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_draft_script(args)
     if args.command == "claims":
         return cmd_claims(args)
+    if args.command == "narrate":
+        return cmd_narrate(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

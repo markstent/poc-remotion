@@ -12,6 +12,7 @@ from poc_remotion.llm import LLMClient, LLMError
 from poc_remotion.project import Project, ProjectError
 from poc_remotion.render import GateError, RenderOptions, render_video
 from poc_remotion.schemas import DiscoveryAnswer
+from poc_remotion.storyboard import run_storyboard
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,6 +108,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON file of answered questions: [{\"question\": ..., \"answer\": ...}, ...]",
     )
     brief_parser.add_argument(
+        "--projects-root", default="./projects", help="Root directory for projects"
+    )
+
+    storyboard_parser = subparsers.add_parser(
+        "draft-storyboard", help="Draft a storyboard from the captured brief"
+    )
+    storyboard_parser.add_argument("--id", required=True, help="Project identifier")
+    storyboard_parser.add_argument(
         "--projects-root", default="./projects", help="Root directory for projects"
     )
 
@@ -309,6 +318,31 @@ def cmd_brief(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_draft_storyboard(args: argparse.Namespace) -> int:
+    """Handle draft-storyboard subcommand."""
+    projects_root = _projects_root(args)
+
+    project_path = projects_root / args.id
+
+    try:
+        project = Project.load(project_path)
+        sb = run_storyboard(project, LLMClient())
+    except (DraftError, ProjectError, LLMError) as exc:
+        _print_error(str(exc))
+        return 2
+    except (TypeError, OSError, ValueError) as exc:
+        # Covers corrupt sources.json or brief.json payloads (JSON decode,
+        # pydantic validation, non-mapping documents), matching the handlers
+        # in cmd_validate, cmd_ingest, cmd_discover and cmd_brief.
+        _print_error(f"storyboard error: {exc}")
+        return 2
+
+    print("id  kind  seconds  summary")
+    for scene in sb.scenes:
+        print(f"{scene.id}  {scene.kind}  {scene.seconds:g}  {scene.summary}")
+    return 0
+
+
 def cmd_render(args: argparse.Namespace) -> int:
     """Handle render subcommand."""
     projects_root = _projects_root(args)
@@ -354,6 +388,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_discover(args)
     if args.command == "brief":
         return cmd_brief(args)
+    if args.command == "draft-storyboard":
+        return cmd_draft_storyboard(args)
 
     _print_error(f"unknown command: {args.command}")
     return 2

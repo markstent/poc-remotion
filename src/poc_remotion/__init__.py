@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from lc-poc-template!")
+"""Python proof-of-concept project for Remotion video builders."""

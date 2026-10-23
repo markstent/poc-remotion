@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-poc-remotion = "poc_remotion:main"
+poc-remotion = "poc_remotion.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

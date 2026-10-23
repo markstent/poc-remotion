@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from poc_remotion.llm import LLMClient, LLMError
@@ -51,7 +53,7 @@ def test_envelope_path_returns_model():
     """Transport returns a real gateway envelope with choices.message.content."""
     sb = _fixture_storyboard()
     envelope = {"choices": [{"message": {"content": sb.model_dump_json()}}]}
-    client = LLMClient(api_key="k", _post=lambda *a: __import__("json").dumps(envelope))
+    client = LLMClient(api_key="k", _post=lambda *a: json.dumps(envelope))
     result = client.chat_json("s", "u", Storyboard)
     assert isinstance(result, Storyboard)
     assert result.duration_seconds > 0
@@ -60,22 +62,31 @@ def test_envelope_path_returns_model():
 def test_repair_path_asserts_user_message():
     """First call returns invalid shape JSON; second returns valid. Verify second payload."""
 
+    captured_payloads = []
+
     first = True
-    def mock_post(*a):
+    def mock_post(url, key, payload):
         nonlocal first
+        captured_payloads.append(payload)
         if first:
             first = False
-            return __import__("json").dumps({"wrong": "shape"})
+            return json.dumps({"wrong": "shape"})
         return _fixture_storyboard().model_dump_json()
 
     client = LLMClient(api_key="k", _post=mock_post)
     result = client.chat_json("s", "u", Storyboard)
     assert result.objectives == ["x"]
 
+    second_payload = captured_payloads[1]
+    messages = second_payload["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system" and messages[0]["content"] == "s"
+    assert messages[1]["role"] == "user" and "Previous output:" in messages[1]["content"]
+    assert "Validation error:" in messages[1]["content"]
+
 
 def test_both_attempts_fail_mentions_both_errors():
     """Second call fails again; raise LLMError with both error texts and last output."""
-    import json
 
     bad1 = {"wrong": "shape"}
     bad2 = "not json at all"
@@ -85,4 +96,4 @@ def test_both_attempts_fail_mentions_both_errors():
     with pytest.raises(LLMError) as excinfo:
         client.chat_json("s", "u", Storyboard)
     msg = str(excinfo.value)
-    assert "Last output:" in msg
+    assert "Last output: not json at all" in msg

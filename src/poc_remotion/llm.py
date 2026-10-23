@@ -69,19 +69,19 @@ class LLMClient:
         while True:
             raw = self._post(url, self._api_key, payload)
             cleaned = _strip_code_fences(raw.strip())
+            last_cleaned = cleaned
 
             try:
                 outer = json.loads(cleaned)
                 choices = outer.get("choices", [])
                 if isinstance(choices, list) and len(choices) > 0 and "message" in choices[0]:
                     content = choices[0]["message"].get("content", "")
-                    cleaned = _strip_code_fences(content.strip())
-                    last_cleaned = cleaned
+                    last_cleaned = _strip_code_fences(content.strip())
             except (json.JSONDecodeError, KeyError, IndexError):
                 pass
 
             try:
-                parsed = json.loads(cleaned)
+                parsed = json.loads(last_cleaned)
                 return schema.model_validate(parsed)
             except (json.JSONDecodeError, ValidationError, TypeError) as err:
                 repair_count += 1

@@ -4,9 +4,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
+from pydantic import ValidationError
+
 from poc_remotion.schemas import (
     ApprovalState,
     Brief,
+    Claim,
     ProjectManifest,
     ScriptDoc,
     SourceRef,
@@ -104,6 +107,26 @@ class Project:
             return False
         brief = Brief.model_validate(json.loads(path.read_text()))
         return bool(brief.qa) or bool(brief.audience)
+
+    def save_claims(self, claims: list[Claim]) -> None:
+        data = [c.model_dump(mode="json") for c in claims]
+        (self.dir / "claims.json").write_text(json.dumps(data, indent=2) + "\n")
+        self._update_manifest()
+
+    def load_claims(self) -> list[Claim]:
+        path = self.dir / "claims.json"
+        if not path.exists():
+            return []
+        raw = json.loads(path.read_text())
+        if not isinstance(raw, list):
+            raise ProjectError(f"claims.json invalid in {self.dir}: expected a list")
+        claims: list[Claim] = []
+        for i, item in enumerate(raw):
+            try:
+                claims.append(Claim.model_validate(item))
+            except ValidationError as exc:
+                raise ProjectError(f"claims.json invalid in {self.dir}: item {i}: {exc}") from exc
+        return claims
 
     def record_approval(self, stage: str) -> None:
         path = self.dir / "approvals.json"

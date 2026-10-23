@@ -148,6 +148,7 @@ def test_draft_requires_brief(tmp_path, capsys, monkeypatch):
     assert "discover" in err
     assert "brief" in err
     assert calls == []
+    assert not (project_root / "demo" / "storyboard.json").exists()
 
 
 def test_draft_duration_outside_window(tmp_path, capsys, monkeypatch):
@@ -195,6 +196,40 @@ def test_scene_seconds_mismatch_repairs_once(tmp_path, capsys, monkeypatch):
     assert "seconds" in repair_user
     assert "310" in repair_user
     assert "300" in repair_user
+
+
+def test_duration_target_none_skips_window_check(tmp_path, capsys, monkeypatch):
+    """A brief without a duration target skips the window check entirely (ruling R-B1)."""
+    project_root = _seeded_project(tmp_path)
+    project = Project.load(project_root / "demo")
+    brief = project.load_brief()
+    brief.duration_minutes = None
+    project.save_brief(brief)
+    calls = _patch_client(monkeypatch, [STORYBOARD_REPLY])
+
+    result = main(["draft-storyboard", "--id", "demo", "--projects-root", str(project_root)])
+
+    assert result == 0
+    assert (project_root / "demo" / "storyboard.json").exists()
+    assert len(calls) == 1
+
+
+def test_repair_exhaustion_exits_two(tmp_path, capsys, monkeypatch):
+    """Both replies' scene seconds fail to sum: exit 2 after exactly one repair, nothing saved."""
+    project_root = _seeded_project(tmp_path)
+    off_scenes = _valid_scenes()
+    off_scenes[0]["seconds"] = 70  # sum 310 against duration_seconds 300
+    bad_reply = _storyboard_reply(300, off_scenes)
+    calls = _patch_client(monkeypatch, [bad_reply, bad_reply])
+
+    result = main(["draft-storyboard", "--id", "demo", "--projects-root", str(project_root)])
+
+    assert result == 2
+    err = capsys.readouterr().err
+    assert "still do not sum" in err
+    assert "310" in err
+    assert not (project_root / "demo" / "storyboard.json").exists()
+    assert len(calls) == 2
 
 
 class _BadOnScreenClient:

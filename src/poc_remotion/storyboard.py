@@ -3,7 +3,7 @@
 from poc_remotion.discovery import DraftError
 from poc_remotion.llm import LLMClient
 from poc_remotion.project import Project
-from poc_remotion.schemas import Brief, Storyboard
+from poc_remotion.schemas import Brief, SourceRef, Storyboard
 
 SCENE_ON_SCREEN_SPEC: dict[str, list[str]] = {
     "title": ["headline", "subheadline"],
@@ -72,7 +72,7 @@ def _user_prompt(brief: Brief, sources_text: str) -> str:
     )
 
 
-def _load_sources(project: Project) -> list:
+def _load_sources(project: Project) -> list[SourceRef]:
     if not (project.dir / "sources.json").exists():
         raise DraftError(_NO_SOURCES)
     sources = project.load_sources()
